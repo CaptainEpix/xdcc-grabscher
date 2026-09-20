@@ -1,3 +1,141 @@
+# XG 3.3.1.0 — Mono/Docker Compatibility Fork
+
+This fork revives **XG (XDCC Grabscher) 3.3.0.0** for modern Mono and Docker environments.
+
+XG was originally created by **Lars Formella**. This fork preserves the original project, licensing, and attribution while applying compatibility and maintenance fixes needed to run XG on current systems.
+
+This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3.1.0**.
+
+## What's changed
+
+- Builds and runs with **Mono 6.12**
+- Added a reproducible multi-stage **Docker** build
+- Fixed Mono build detection for current Mono/Roslyn toolchains
+- Removed the obsolete Jabber plugin dependency
+- Uses the Debian/Mono-compatible db4o assembly at runtime
+- Forces SignalR to use long polling instead of unsupported WebSockets
+- Automatically reconnects the web UI after SignalR disconnects
+- Fixed packet searches hanging when the first search was entered manually
+- Removed the obsolete remote-settings loader
+- Removed the defunct XG cloud-search configuration and donation/server-status message
+- Updated application and web-resource versioning to **3.3.1.0**
+
+## Docker
+
+### Build
+
+From the repository root:
+
+```bash
+docker build -t xdcc-grabscher:3.3.1.0 .
+```
+
+### Run
+
+```bash
+docker run -d \
+  --name xdcc-grabscher \
+  --restart unless-stopped \
+  -p 5556:5556 \
+  -v /path/to/config:/config \
+  -v /path/to/downloads:/config/.config/XG/dl \
+  xdcc-grabscher:3.3.1.0
+```
+
+Then open:
+
+```text
+http://YOUR-SERVER:5556
+```
+
+**Change the default XG web password (`xgisgreat`) after your first login.**
+
+XG deliberately refuses to run as root. The Docker image therefore runs XG as UID/GID **99:100**.
+
+Make sure the directories mounted at `/config` and `/config/.config/XG/dl` are writable by that user. For example:
+
+```bash
+mkdir -p config downloads
+chown -R 99:100 config downloads
+```
+
+The exact host paths are up to you; the paths above are only examples.
+
+## Docker Compose
+
+The repository includes a `docker-compose.yml` using local `config` and `downloads` directories.
+
+Before starting it for the first time:
+
+```bash
+mkdir -p config downloads
+chown -R 99:100 config downloads
+docker compose up -d --build
+```
+
+## Persistent data
+
+XG stores its configuration and application data underneath:
+
+```text
+/config
+```
+
+Downloads are written by default to:
+
+```text
+/config/.config/XG/dl
+```
+
+Both should normally be backed by persistent Docker bind mounts or volumes.
+
+## Security warning
+
+XG is an old application and still depends on an old web stack, including legacy versions of Nancy, SignalR, jQuery, Bootstrap, and other libraries.
+
+**Do not expose the XG web interface directly to the public Internet.**
+
+For normal use, keep it accessible only on a trusted LAN. If remote access is required, place it behind an appropriately secured reverse proxy with authentication and TLS.
+
+Modernizing the dependency stack is outside the scope of this initial compatibility release.
+
+## Known issues
+
+### SignalR I/O warnings under Mono
+
+The container log may occasionally contain warnings similar to:
+
+```text
+SignalR exception thrown by Task: System.AggregateException:
+One or more errors occurred. (I/O error occurred.)
+```
+
+These appear to be associated with SignalR long-poll connection turnover under Mono. During testing they have not interrupted the web interface, searches, IRC connectivity, or XDCC downloads.
+
+### WebSockets
+
+The legacy SignalR/Nowin stack used by XG does not provide working WebSocket support under the current Mono environment. This fork explicitly uses SignalR long polling instead.
+
+## Release naming
+
+Application version:
+
+```text
+3.3.1.0
+```
+
+Compatibility release/tag:
+
+```text
+v3.3.1.0-mono2026
+```
+
+## Original project
+
+Everything below this point is the original XG project documentation.
+
+---
+
 [![XG](http://xg.bitpir.at/images/xg_bw.png?v=3)](http://www.larsformella.de/lang/en/portfolio/programme-software/xg)
 
 XG, called __X__dcc __G__rabscher, is a XDCC download manager. Grabscher is the german word for grabber :-)

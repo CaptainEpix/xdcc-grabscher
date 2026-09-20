@@ -1,0 +1,11 @@
+services:
+  xg:
+    build: .
+    image: xdcc-grabscher:3.3.1.0
+    container_name: xdcc-grabscher
+    restart: unless-stopped
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./config:/config
+      - ./downloads:/config/.config/XG/dl
