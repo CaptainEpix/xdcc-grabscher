@@ -41,7 +41,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Build.Mono|AnyCPU'">
     <OutputPath>bin\Build.Mono\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
+    <DefineConstants>TRACE;__MonoCS__</DefineConstants>
     <Optimize>true</Optimize>
     <DebugType>pdbonly</DebugType>
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -214,7 +214,6 @@
     <Compile Include="Search\Results.cs" />
     <Compile Include="Search\WildcardQuery.cs" />
     <Compile Include="RemoteSettings.cs" />
-    <Compile Include="Job\RemoteSettingsLoader.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Resources\js\config\index.js" />

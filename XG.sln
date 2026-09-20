@@ -11,8 +11,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XG.DB", "XG.DB\XG.DB.csproj
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XG.Plugin", "XG.Plugin\XG.Plugin.csproj", "{258B9C1A-AA53-4E23-8486-2BCA0FE65538}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XG.Plugin.Jabber", "XG.Plugin.Jabber\XG.Plugin.Jabber.csproj", "{1D427F5E-B740-453C-8670-CE5D09021595}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XG.Plugin.Webserver", "XG.Plugin.Webserver\XG.Plugin.Webserver.csproj", "{E978DE8D-E01F-4F2D-B939-254A4308ED2B}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XG.Plugin.Import", "XG.Plugin.Import\XG.Plugin.Import.csproj", "{4D5707FE-5167-45DC-BFD7-A55E49757D0D}"
@@ -39,14 +37,6 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{1D427F5E-B740-453C-8670-CE5D09021595}.Build.Mono|Any CPU.ActiveCfg = Build.Mono|Any CPU
-		{1D427F5E-B740-453C-8670-CE5D09021595}.Build.Mono|Any CPU.Build.0 = Build.Mono|Any CPU
-		{1D427F5E-B740-453C-8670-CE5D09021595}.Build.Wix|Any CPU.ActiveCfg = Build.Wix|Any CPU
-		{1D427F5E-B740-453C-8670-CE5D09021595}.Build.Wix|Any CPU.Build.0 = Build.Wix|Any CPU
-		{1D427F5E-B740-453C-8670-CE5D09021595}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{1D427F5E-B740-453C-8670-CE5D09021595}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1D427F5E-B740-453C-8670-CE5D09021595}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{1D427F5E-B740-453C-8670-CE5D09021595}.Release|Any CPU.Build.0 = Release|Any CPU
 		{20384A6F-DEBE-438D-9B38-AD2AC36F5B21}.Build.Mono|Any CPU.ActiveCfg = Build.Mono|Any CPU
 		{20384A6F-DEBE-438D-9B38-AD2AC36F5B21}.Build.Mono|Any CPU.Build.0 = Build.Mono|Any CPU
 		{20384A6F-DEBE-438D-9B38-AD2AC36F5B21}.Build.Wix|Any CPU.ActiveCfg = Build.Wix|Any CPU

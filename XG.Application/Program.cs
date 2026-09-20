@@ -180,10 +180,6 @@ namespace XG.Application
 			app = new App();
 
 			app.AddPlugin(new Plugin.Irc.Plugin());
-			if (Settings.Default.UseJabberClient)
-			{
-				app.AddPlugin(new Plugin.Jabber.Plugin());
-			}
 			if (Settings.Default.UseElasticSearch)
 			{
 				app.AddPlugin(new Plugin.ElasticSearch.Plugin());

@@ -65,6 +65,8 @@ define(['./module'], function (ng) {
 			$scope.formats = ['G', 'M', 'K', 'B'];
 			$scope.format = $scope.formats[3];
 
+                        $scope.size = 0;
+
 			// size formatter
 			$scope.getRealSize = function ()
 			{

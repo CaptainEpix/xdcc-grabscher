@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-	<Product Id="*" Name="XG" Language="1033" Version="3.3.0.0" Manufacturer="Lars Formella" UpgradeCode="d95523ff-1478-41d8-8139-3a7abc1a3fc7">
+	<Product Id="*" Name="XG" Language="1033" Version="3.3.1.0" Manufacturer="Lars Formella" UpgradeCode="d95523ff-1478-41d8-8139-3a7abc1a3fc7">
 		<Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
 
 		<MajorUpgrade DowngradeErrorMessage="A newer version of XG is already installed." />

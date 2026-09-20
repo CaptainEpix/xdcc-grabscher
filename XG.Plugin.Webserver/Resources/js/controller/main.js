@@ -58,7 +58,7 @@ define(['./module'], function (ng) {
 				{
 					$scope.password = password;
 					$scope.passwordOk = true;
-					$.connection.hub.start().done(
+					$.connection.hub.start({ transport: 'longPolling' }).done(
 						function ()
 						{
 							$rootScope.$emit('OnConnected', password);
@@ -69,12 +69,33 @@ define(['./module'], function (ng) {
 							$scope.openErrorDialog(message);
 						}
 					);
-					$.connection.hub.error(
-						function (message)
-						{
-							$scope.openErrorDialog(message);
-						}
-					);
+                                        $.connection.hub.error(function (message)
+                                        {
+                                                console.warn("SignalR transport error:", message);
+                                        });
+
+                                        var reconnectSignalR = function ()
+                                        {
+                                                if ($.connection.hub.state != $.signalR.connectionState.disconnected)
+                                                {
+                                                        return;
+                                                }
+
+                                                $.connection.hub.start({ transport: 'longPolling' }).done(function ()
+                                                {
+                                                        $rootScope.$emit('OnConnected', $scope.password);
+                                                }).fail(function (message)
+                                                {
+                                                        console.warn("SignalR reconnect failed:", message);
+                                                        setTimeout(reconnectSignalR, 5000);
+                                                });
+                                        };
+
+                                        $.connection.hub.disconnected(function ()
+                                        {
+                                                console.warn("SignalR disconnected; reconnecting automatically.");
+                                                setTimeout(reconnectSignalR, 5000);
+                                        });
 					ipCookie('xg.password', password, { expires: 21, path: '/' });
 				});
 			}

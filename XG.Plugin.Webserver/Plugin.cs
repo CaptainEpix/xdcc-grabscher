@@ -109,7 +109,6 @@ namespace XG.Plugin.Webserver
 			var settings = new RemoteSettings { Version = new Version(), ExternalSearch = new ExternalSearch { Enabled = false } };
 			SignalR.Hub.Helper.RemoteSettings = settings;
 			Nancy.Helper.RemoteSettings = settings;
-			AddRepeatingJob(typeof(Job.RemoteSettingsLoader), "RemoteSettingsLoader", "WebserverPlugin", 60 * 60 * 24);
 		}
 
 		protected override void StopRun()
