@@ -1,0 +1,105 @@
+name: Publish container
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish
+        required: true
+        default: v3.3.2.0-mono2026
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: captainepix/xdcc-grabscher
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Determine release tags
+        id: vars
+        shell: bash
+        env:
+          MANUAL_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            RELEASE_TAG="$MANUAL_TAG"
+          else
+            RELEASE_TAG="$GITHUB_REF_NAME"
+          fi
+
+          if [[ "$RELEASE_TAG" != v* ]]; then
+            echo "::error::Release tag must begin with v"
+            exit 1
+          fi
+
+          VERSION_TAG="${RELEASE_TAG#v}"
+          REVISION="$(git rev-parse HEAD)"
+
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "version_tag=$VERSION_TAG" >> "$GITHUB_OUTPUT"
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+
+          echo "Publishing $RELEASE_TAG as:"
+          echo "  $REGISTRY/$IMAGE_NAME:$VERSION_TAG"
+          echo "  $REGISTRY/$IMAGE_NAME:$RELEASE_TAG"
+          echo "  $REGISTRY/$IMAGE_NAME:latest"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          pull: true
+          provenance: false
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.version_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.release_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/CaptainEpix/xdcc-grabscher
+            org.opencontainers.image.version=${{ steps.vars.outputs.version_tag }}
+            org.opencontainers.image.revision=${{ steps.vars.outputs.revision }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Publish summary
+        shell: bash
+        run: |
+          {
+            echo "## XG container published"
+            echo
+            echo "- \`${REGISTRY}/${IMAGE_NAME}:${{ steps.vars.outputs.version_tag }}\`"
+            echo "- \`${REGISTRY}/${IMAGE_NAME}:${{ steps.vars.outputs.release_tag }}\`"
+            echo "- \`${REGISTRY}/${IMAGE_NAME}:latest\`"
+            echo "- Digest: \`${{ steps.build.outputs.digest }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
