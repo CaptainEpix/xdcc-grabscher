@@ -44,7 +44,7 @@ namespace XG.Plugin.Irc
 		static readonly ILog _log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
 		XdccClient _client;
-		
+
 		readonly TimedList<Bot> _botQueue = new TimedList<Bot>();
 		readonly TimedList<Model.Domain.Channel> _channelQueue = new TimedList<Model.Domain.Channel>();
 		readonly TimedList<Model.Domain.Channel> _channelToSendMessageQueue = new TimedList<Model.Domain.Channel>();
@@ -300,7 +300,16 @@ namespace XG.Plugin.Irc
 		{
 			if (aEventArgs.Value1 == Server)
 			{
-				_log.Info("WriteLine(" + aEventArgs.Value2 + ")");
+				string commandForLog = aEventArgs.Value2;
+
+if (!String.IsNullOrEmpty(commandForLog) &&
+    (commandForLog.StartsWith("NickServ ", StringComparison.OrdinalIgnoreCase) ||
+     commandForLog.StartsWith("PRIVMSG NickServ :IDENTIFY ", StringComparison.OrdinalIgnoreCase)))
+{
+        commandForLog = "NickServ [credentials redacted]";
+}
+
+				_log.Info("WriteLine(" + commandForLog + ")");
 				_client.WriteLine(aEventArgs.Value2);
 			}
 		}

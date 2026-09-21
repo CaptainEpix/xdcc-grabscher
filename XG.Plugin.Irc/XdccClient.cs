@@ -162,7 +162,7 @@ namespace XG.Plugin.Irc
 			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.Ban, Event = e });
 			_waitHandle.Set();
 		}
-			
+
 		void ClientOnChannelMessage(object sender, IrcEventArgs e)
 		{
 			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.ChannelMessage, Event = e });
@@ -412,7 +412,7 @@ namespace XG.Plugin.Irc
 			Server.Commit();
 			FireNotificationAdded(Notification.Types.ServerConnected, Server);
 			_log.Info("connected " + Server);
-			_client.Login(Settings.Default.IrcNick, Settings.Default.IrcNick, 0, Settings.Default.IrcNick, Settings.Default.IrcPasswort);
+			_client.Login(Settings.Default.IrcNick, Settings.Default.IrcNick, 0, Settings.Default.IrcNick, null);
 			if (Server.Channels.Count > 0)
 			{
 				var channels = (from channel in Server.Channels
@@ -437,9 +437,15 @@ namespace XG.Plugin.Irc
 			{
 				int tWaitTime = 0;
 				var notificationType = Notification.Types.ChannelJoinFailed;
+
+
 				switch (e.Data.ReplyCode)
 				{
-					case ReplyCode.ErrorNoChannelModes:
+
+
+                                        case ReplyCode.ErrorNoChannelModes:
+                                                tWaitTime = Settings.Default.ChannelWaitTimeShort;
+                                                break;
 					case ReplyCode.ErrorTooManyChannels:
 					case ReplyCode.ErrorNotRegistered:
 					case ReplyCode.ErrorChannelIsFull:
@@ -647,7 +653,13 @@ namespace XG.Plugin.Irc
 		{
 			Model.Domain.Channel tChan = null;
 
-			if (e.Data.Type == ReceiveType.QueryNotice || e is CtcpEventArgs)
+			if (!String.IsNullOrEmpty(e.Data.Nick) &&
+			    e.Data.Nick.Equals("NickServ", StringComparison.OrdinalIgnoreCase))
+			{
+				tChan = Server.Channels.FirstOrDefault(channel => channel.Enabled)
+				        ?? Server.Channels.FirstOrDefault();
+			}
+			else if (e.Data.Type == ReceiveType.QueryNotice || e is CtcpEventArgs)
 			{
 				if (!String.IsNullOrEmpty(e.Data.Nick))
 				{
@@ -709,8 +721,21 @@ namespace XG.Plugin.Irc
 			{
 				new Thread(new ThreadStart(EventThread)).Start();
 
-				_log.Info("connecting " + Server);
-				_client.Connect(Server.Name, Server.Port);
+				string connectHost = Server.Name;
+
+				bool useSsl = Server.Port == 6697 ||
+				              connectHost.StartsWith("ircs://", StringComparison.OrdinalIgnoreCase);
+
+				if (connectHost.StartsWith("ircs://", StringComparison.OrdinalIgnoreCase))
+				{
+				        connectHost = connectHost.Substring(7);
+				}
+
+				_client.UseSsl = useSsl;
+				_client.ValidateServerCertificate = useSsl;
+
+				_log.Info("connecting " + Server + (useSsl ? " using TLS" : ""));
+				_client.Connect(connectHost, Server.Port);
 
 				// this is blocking, so we have a straight flow
 				_client.Listen();

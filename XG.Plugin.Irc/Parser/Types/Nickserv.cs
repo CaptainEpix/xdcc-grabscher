@@ -1,28 +1,29 @@
-﻿// 
+﻿//
 //  Nickserv.cs
 //  This file is part of XG - XDCC Grabscher
 //  http://www.larsformella.de/lang/en/portfolio/programme-software/xg
 //
 //  Author:
 //       Lars Formella <ich@larsformella.de>
-// 
+//
 //  Copyright (c) 2012 Lars Formella
-// 
+//
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
 //  the Free Software Foundation; either version 2 of the License, or
 //  (at your option) any later version.
-// 
+//
 //  This program is distributed in the hope that it will be useful,
 //  but WITHOUT ANY WARRANTY; without even the implied warranty of
 //  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 //  GNU General Public License for more details.
-// 
+//
 //  You should have received a copy of the GNU General Public License
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
-//  
+//
 
+using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Meebey.SmartIrc4net;
@@ -32,9 +33,12 @@ using XG.Model.Domain;
 
 namespace XG.Plugin.Irc.Parser.Types
 {
-	public class Nickserv : AParser
+
+public class Nickserv : AParser
 	{
-		readonly HashSet<Server> _authenticatedServer = new HashSet<Server>();
+
+                readonly Dictionary<Server, DateTime> _lastIdentifyAttempt = new Dictionary<Server, DateTime>();
+
 
 		public override bool Parse(Message aMessage)
 		{
@@ -73,19 +77,25 @@ namespace XG.Plugin.Irc.Parser.Types
 					FireWriteLine(this, new EventArgs<Server, string>(aMessage.Channel.Parent, Rfc2812.Nick(Settings.Default.IrcNick)));
 				}
 
-				else if (Helper.Match(aMessage.Text, ".*(This nickname is registered and protected|This nick is being held for a registered user|msg NickServ IDENTIFY).*").Success)
-				{
-					if (Settings.Default.IrcPasswort != "" && !_authenticatedServer.Contains(aMessage.Channel.Parent))
-					{
-						_authenticatedServer.Add(aMessage.Channel.Parent);
-						//TODO check if we are really registered
-						FireWriteLine(this, new EventArgs<Server, string>(aMessage.Channel.Parent, aMessage.Nick + " identify " + Settings.Default.IrcPasswort));
-					}
-					else
-					{
-						Log.Error("nick is already registered and i got no password");
-					}
-				}
+                                else if (Helper.Match(aMessage.Text, ".*(This nickname is registered and protected|This nick is being held for a registered user|msg NickServ IDENTIFY).*").Success)
+                                {
+                                        if (Settings.Default.IrcPasswort != "")
+                                        {
+                                                DateTime lastIdentifyAttempt;
+                                                if (!_lastIdentifyAttempt.TryGetValue(aMessage.Channel.Parent, out lastIdentifyAttempt) ||
+                                                    (DateTime.UtcNow - lastIdentifyAttempt).TotalSeconds >= 5)
+                                                {
+                                                        _lastIdentifyAttempt[aMessage.Channel.Parent] = DateTime.UtcNow;
+                                                        FireWriteLine(this, new EventArgs<Server, string>(
+                                                                aMessage.Channel.Parent,
+                                                                "PRIVMSG " + aMessage.Nick + " :IDENTIFY " + Settings.Default.IrcPasswort));
+                                                }
+                                        }
+                                        else
+                                        {
+                                                Log.Error("nick is already registered and i got no password");
+                                        }
+                                }
 
 				else if (Helper.Match(aMessage.Text, ".*You must have been using this nick for at least 30 seconds to register.*").Success)
 				{
@@ -108,10 +118,19 @@ namespace XG.Plugin.Irc.Parser.Types
 					Log.Info("nick registered succesfully");
 				}
 
-				else if (Helper.Match(aMessage.Text, ".*Password accepted.*").Success)
+
+                                else if (Helper.Match(aMessage.Text, ".*(Password accepted|You are now identified|You are now logged in).*").Success)
 				{
 					Log.Info("password accepted");
+					foreach (var channel in aMessage.Channel.Parent.Channels)
+					{
+						if (channel.Enabled)
+						{
+							FireJoinChannel(this, new EventArgs<Server, string>(aMessage.Channel.Parent, channel.Name));
+						}
+					}
 				}
+
 
 				else if (Helper.Match(aMessage.Text, ".*Please type .*to complete registration.*").Success)
 				{
@@ -132,7 +151,6 @@ namespace XG.Plugin.Irc.Parser.Types
 					Log.Info("password accepted");
 				}
 
-				Log.Error("unknow command: " + aMessage.Text);
 				return true;
 			}
 			return false;
