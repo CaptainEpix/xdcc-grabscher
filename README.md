@@ -1,10 +1,10 @@
-# XG 3.3.1.0 — Mono/Docker Compatibility Fork
+# XG 3.3.2.0 — Mono/Docker Compatibility Fork
 
 This fork revives **XG (XDCC Grabscher) 3.3.0.0** for modern Mono and Docker environments.
 
 XG was originally created by **Lars Formella**. This fork preserves the original project, licensing, and attribution while applying compatibility and maintenance fixes needed to run XG on current systems.
 
-This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3.1.0**.
+This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3.2.0**.
 
 ## What's changed
 
@@ -18,7 +18,12 @@ This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3
 - Fixed packet searches hanging when the first search was entered manually
 - Removed the obsolete remote-settings loader
 - Removed the defunct XG cloud-search configuration and donation/server-status message
-- Updated application and web-resource versioning to **3.3.1.0**
+- Added native **IRC TLS** support, with automatic TLS on port 6697 and explicit `ircs://` support for custom TLS ports
+- Validates IRC server certificates when using TLS
+- Fixed **NickServ** authentication and reconnect handling, including protected-channel retries after identification
+- Prevented NickServ credentials from being sent as an IRC server password and redacted authentication credentials from logs
+- Fixed the IRC password field in the web interface
+- Updated application and web-resource versioning to **3.3.2.0**
 
 ## Docker
 
@@ -27,7 +32,7 @@ This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3
 From the repository root:
 
 ```bash
-docker build -t xdcc-grabscher:3.3.1.0 .
+docker build -t xdcc-grabscher:3.3.2.0 .
 ```
 
 ### Run
@@ -39,7 +44,7 @@ docker run -d \
   -p 5556:5556 \
   -v /path/to/config:/config \
   -v /path/to/downloads:/config/.config/XG/dl \
-  xdcc-grabscher:3.3.1.0
+  xdcc-grabscher:3.3.2.0
 ```
 
 Then open:
@@ -121,13 +126,13 @@ The legacy SignalR/Nowin stack used by XG does not provide working WebSocket sup
 Application version:
 
 ```text
-3.3.1.0
+3.3.2.0
 ```
 
 Compatibility release/tag:
 
 ```text
-v3.3.1.0-mono2026
+v3.3.2.0-mono2026
 ```
 
 ## Original project
