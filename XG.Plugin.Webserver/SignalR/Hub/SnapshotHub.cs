@@ -76,7 +76,7 @@ namespace XG.Plugin.Webserver.SignalR.Hub
 		{
 			var tObjects = new List<Flot>();
 
-			var snapshot = Business.Helper.Snapshots.GenerateSnapshot();
+			var snapshot = Business.Helper.Snapshots.GenerateDashboardSnapshot();
 			for (int a = 1; a <= Snapshot.SnapshotCount; a++)
 			{
 				var value = (SnapshotValue)a;

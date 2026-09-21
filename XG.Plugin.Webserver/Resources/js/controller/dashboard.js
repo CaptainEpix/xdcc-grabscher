@@ -29,13 +29,23 @@ define(['./module'], function (ng) {
 	ng.controller('DashboardCtrl', ['$rootScope', '$scope', 'SignalrService',
 		function ($rootScope, $scope, SignalrService)
 		{
+			$scope.loopStarted = false;
+
 			var eventCallbacks = [
 				{
 					name: 'OnConnected',
 					callback:  function ()
 					{
 						$scope.refreshSnapshot();
-						$scope.loop();
+
+						if (!$scope.loopStarted)
+						{
+							$scope.loopStarted = true;
+							setTimeout(function ()
+							{
+								$scope.loop();
+							}, 10000);
+						}
 					}
 				}
 			];
@@ -58,6 +68,11 @@ define(['./module'], function (ng) {
 
 			$scope.refreshSnapshot = function ()
 			{
+				if (!SignalrService.isConnected())
+				{
+					return;
+				}
+
 				var signalR = null;
 				try
 				{
@@ -65,8 +80,8 @@ define(['./module'], function (ng) {
 				}
 				catch (e)
 				{
-					var message = { source: { status: 404 }};
-					$rootScope.$emit('AnErrorOccurred', message);
+					console.warn("Dashboard snapshot refresh failed:", e);
+					return;
 				}
 
 				if (signalR != null)
@@ -84,7 +99,10 @@ define(['./module'], function (ng) {
 							$scope.snapshot = liveSnapshot;
 							$scope.$apply();
 						}
-					);
+					).fail(function (message)
+					{
+						console.warn("Dashboard snapshot refresh failed:", message);
+					});
 				}
 			};
 

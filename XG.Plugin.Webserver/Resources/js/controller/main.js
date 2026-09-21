@@ -74,8 +74,22 @@ define(['./module'], function (ng) {
                                                 console.warn("SignalR transport error:", message);
                                         });
 
+                                        var reconnectTimer = null;
+
+                                        var scheduleSignalRReconnect = function ()
+                                        {
+                                                if (reconnectTimer != null)
+                                                {
+                                                        return;
+                                                }
+
+                                                reconnectTimer = setTimeout(reconnectSignalR, 5000);
+                                        };
+
                                         var reconnectSignalR = function ()
                                         {
+                                                reconnectTimer = null;
+
                                                 if ($.connection.hub.state != $.signalR.connectionState.disconnected)
                                                 {
                                                         return;
@@ -87,14 +101,14 @@ define(['./module'], function (ng) {
                                                 }).fail(function (message)
                                                 {
                                                         console.warn("SignalR reconnect failed:", message);
-                                                        setTimeout(reconnectSignalR, 5000);
+                                                        scheduleSignalRReconnect();
                                                 });
                                         };
 
                                         $.connection.hub.disconnected(function ()
                                         {
                                                 console.warn("SignalR disconnected; reconnecting automatically.");
-                                                setTimeout(reconnectSignalR, 5000);
+                                                scheduleSignalRReconnect();
                                         });
 					ipCookie('xg.password', password, { expires: 21, path: '/' });
 				});

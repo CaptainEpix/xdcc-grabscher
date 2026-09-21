@@ -28,15 +28,9 @@ define(['./module'], function (ng) {
 
 	ng.service('SignalrService', ['$rootScope', function ($rootScope)
 	{
-		var connected = false;
-		$rootScope.$on('OnConnected', function ()
-		{
-			connected = true;
-		});
-
 		this.isConnected = function(name)
 		{
-			return connected;
+			return $.connection.hub.state == $.signalR.connectionState.connected;
 		};
 
 		this.getProxy = function(name)
