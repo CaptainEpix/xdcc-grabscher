@@ -94,6 +94,123 @@ Downloads are written by default to:
 
 Both should normally be backed by persistent Docker bind mounts or volumes.
 
+## Prowlarr / Sonarr / Radarr integration
+
+XG can act as an **indexer** for Prowlarr and as a **download client** for Sonarr, Radarr and Prowlarr. Nothing has to be patched or installed next to XG:
+
+```text
+Sonarr/Radarr → Prowlarr → XG Newznab API → NZB file → XG SABnzbd API → XDCC download → Sonarr/Radarr import
+```
+
+To do that, XG offers two small compatibility APIs on its normal web port:
+
+| Endpoint | Emulates | Used by |
+| --- | --- | --- |
+| `http://XG-HOST:5556/newznab/api` | a Newznab indexer | Prowlarr (Generic Newznab) |
+| `http://XG-HOST:5556/sabnzbd/api` | a SABnzbd download client | Sonarr, Radarr, Prowlarr |
+
+Please note:
+
+- **XG is not a Usenet client.** No Usenet server is ever contacted.
+- The NZB files XG hands out are only an **internal envelope** that carries the XG packet through Prowlarr/Sonarr/Radarr and back to XG. They are useless to a real Usenet downloader.
+- The SABnzbd API exists **only** so the existing *Arr SABnzbd client can submit and monitor XDCC downloads.
+- Search is **text only**. IMDb/TVDB/TMDB id searches are not supported, because XDCC packets only have a file name.
+
+### 1. Create an API key in XG
+
+In the XG web interface, open the settings menu (gear icon), choose **Api Keys**, add a key with a name (for example `arr`) and make sure it is enabled. The long value in the **Api Key** column is what Prowlarr, Sonarr and Radarr need.
+
+You can use one key for everything or one key per application.
+
+### 2. Prowlarr: add XG as indexer
+
+**Indexers → Add Indexer → Generic Newznab**
+
+| Setting | Value |
+| --- | --- |
+| URL | `http://XG-HOST:5556/newznab` |
+| API Path | `/api` (the default) |
+| API Key | your XG API key |
+| Categories | Movies (2000), TV (5000) |
+
+The Prowlarr test asks XG for its newest packets, so **at least one bot must be online** with packets when you press *Test*.
+
+Prowlarr then syncs XG to Sonarr (TV) and Radarr (Movies) like any other indexer.
+
+By default only packets of bots that are currently online are returned, because offline bots can not deliver. To include offline bots anyway, set *Additional Parameters* to `&offline=1`.
+
+### 3. Sonarr and Radarr: add XG as download client
+
+**Settings → Download Clients → + → SABnzbd**
+
+| Setting | Sonarr | Radarr |
+| --- | --- | --- |
+| Host | XG host | XG host |
+| Port | `5556` | `5556` |
+| Use SSL | off | off |
+| URL Base | `/sabnzbd` | `/sabnzbd` |
+| API Key | your XG API key | your XG API key |
+| Username / Password | empty | empty |
+| Category | `tv` | `movies` |
+
+Prowlarr only provides the indexer; each *Arr application still needs XG configured as its download client.
+
+If you want to grab directly from a Prowlarr search, add the same SABnzbd download client in Prowlarr too (its default category `prowlarr` exists in XG).
+
+### 4. Remote Path Mapping
+
+XG reports finished downloads with the path **XG itself sees**, by default inside its download folder:
+
+```text
+/config/.config/XG/dl/Some.Show.S02E05.720p.mkv
+```
+
+XG can not know how that folder is mounted into your Sonarr or Radarr container. If the paths differ, add a **Remote Path Mapping** in Sonarr/Radarr (**Settings → Download Clients → Remote Path Mappings**).
+
+Example on unRAID, where the same share is mounted differently into both containers:
+
+| Container | Host path | Container path |
+| --- | --- | --- |
+| XG | `/mnt/user/downloads/xdcc` | `/config/.config/XG/dl` |
+| Sonarr | `/mnt/user/downloads` | `/downloads` |
+
+Remote Path Mapping in Sonarr:
+
+| Host | Remote Path | Local Path |
+| --- | --- | --- |
+| XG host, exactly as in the download client | `/config/.config/XG/dl/` | `/downloads/xdcc/` |
+
+If you changed the download folder in the XG settings, XG reports that folder instead.
+
+### How it behaves
+
+**Searching**
+
+- Text queries are matched against packet file names the same way the XG search does. Dots, dashes and underscores count as word separators, and `-word` excludes a word.
+- Sonarr episode searches become `S02E05`. Season searches match every packet whose name contains a token starting with `S02`. Daily shows are matched by their date.
+- XG does not know whether a packet is a movie or an episode. The category comes from the request: movie searches are returned as Movies, TV searches as TV, other searches in the requested category or as Other (8000).
+- The publish date is the last time a bot announced the packet.
+- Bots reuse pack numbers. If a packet offers a different file by the time it is grabbed, the grab is refused, so the wrong file is never downloaded.
+
+**Downloading**
+
+- A grab enables the packet in XG, exactly like clicking it in the web interface.
+- The *Arr queue shows the job as *queued* while XG waits for the bot, and as *downloading* with progress and speed during the transfer.
+- When XG has moved the finished file into its download folder, the job moves to history as *completed*, including the file path, and the *Arr imports it.
+- If XG stops the download (bot offline, request denied, pack no longer valid, or disabled by you in XG), the job is marked *failed* and includes the last bot message. The *Arr can then search for another release or retry.
+- Removing a completed item from the *Arr history only forgets the job. The downloaded file is only deleted when the *Arr explicitly asks to remove the data, and only if it is still that job's file inside XG's download folder.
+- Jobs are stored in `/config/.config/XG/arr-jobs.json` and survive restarts.
+
+### Known limitations
+
+- Text search only; no IMDb/TVDB/TMDB id lookups, no anime absolute episode numbers, and names like `2x05` are not found by episode searches.
+- Removing a *downloading* item from the *Arr queue stops the XDCC transfer, and XG always deletes the partial file, even if the *Arr was asked to keep data.
+- XG has no pause or priorities. SABnzbd priorities are accepted but ignored.
+- All downloads land in XG's single download folder; categories do not get separate folders.
+- Grabbing a packet that is already being downloaded for an *Arr returns the existing job instead of a second one.
+- The reported SABnzbd version is a fixed compatibility value.
+- API keys are passed in the URL, as Newznab and SABnzbd clients expect. Keep XG on your LAN (see below) and do not share these URLs.
+
 ## Security warning
 
 XG is an old application and still depends on an old web stack, including legacy versions of Nancy, SignalR, jQuery, Bootstrap, and other libraries.
