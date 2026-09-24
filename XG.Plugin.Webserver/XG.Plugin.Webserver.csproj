@@ -213,6 +213,20 @@
     <Compile Include="Job\SearchUpdater.cs" />
     <Compile Include="Search\Results.cs" />
     <Compile Include="Search\WildcardQuery.cs" />
+    <Compile Include="Compat\CompatApiKeys.cs" />
+    <Compile Include="Compat\XmlText.cs" />
+    <Compile Include="Compat\Newznab\NewznabException.cs" />
+    <Compile Include="Compat\Newznab\NewznabRequest.cs" />
+    <Compile Include="Compat\Newznab\NewznabXml.cs" />
+    <Compile Include="Compat\Newznab\NewznabHandler.cs" />
+    <Compile Include="Compat\Nzb\SyntheticNzb.cs" />
+    <Compile Include="Compat\Sabnzbd\CompatJob.cs" />
+    <Compile Include="Compat\Sabnzbd\CompatJobStore.cs" />
+    <Compile Include="Compat\Sabnzbd\CompatJobTracker.cs" />
+    <Compile Include="Compat\Sabnzbd\SabnzbdHandler.cs" />
+    <Compile Include="Nancy\Compat\CompatModule.cs" />
+    <Compile Include="Nancy\Compat\NewznabModule.cs" />
+    <Compile Include="Nancy\Compat\SabnzbdModule.cs" />
     <Compile Include="RemoteSettings.cs" />
   </ItemGroup>
   <ItemGroup>

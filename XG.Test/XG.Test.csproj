@@ -76,6 +76,7 @@
       <HintPath>..\packages\smartirc4net.0.5.0\StarkSoftProxy.dll</HintPath>
     </Reference>
     <Reference Include="System" />
+    <Reference Include="System.Xml" />
     <Reference Include="System.ComponentModel.DataAnnotations" />
     <Reference Include="System.Data" />
     <Reference Include="Mono.Data.Sqlite" />
@@ -137,6 +138,10 @@
     <Compile Include="Business\Helper\Objects.cs" />
     <Compile Include="Plugin\Webserver\Search\Packets.cs" />
     <Compile Include="Business\Helper\FileActions.cs" />
+    <Compile Include="Plugin\Webserver\Compat\CompatTestData.cs" />
+    <Compile Include="Plugin\Webserver\Compat\NewznabApi.cs" />
+    <Compile Include="Plugin\Webserver\Compat\SyntheticNzbTest.cs" />
+    <Compile Include="Plugin\Webserver\Compat\SabnzbdApi.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
@@ -166,10 +171,6 @@
     <ProjectReference Include="..\XG.Plugin.Irc\XG.Plugin.Irc.csproj">
       <Project>{9BFA221A-262C-4474-81D1-BD0ABF84CA0E}</Project>
       <Name>XG.Plugin.Irc</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\XG.Plugin.Jabber\XG.Plugin.Jabber.csproj">
-      <Project>{1D427F5E-B740-453C-8670-CE5D09021595}</Project>
-      <Name>XG.Plugin.Jabber</Name>
     </ProjectReference>
     <ProjectReference Include="..\XG.Plugin.Webserver\XG.Plugin.Webserver.csproj">
       <Project>{E978DE8D-E01F-4F2D-B939-254A4308ED2B}</Project>

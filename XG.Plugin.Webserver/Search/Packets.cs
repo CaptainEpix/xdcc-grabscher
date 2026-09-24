@@ -142,8 +142,9 @@ namespace XG.Plugin.Webserver.Search
 		public static void Initialize()
 		{
 			_dir = new RAMDirectory(); //FSDirectory.Open(new DirectoryInfo(@"C:/test_lucene"));
-			_analyzer = new StandardAnalyzer(Lucene.Net.Util.Version.LUCENE_30, new HashSet<string>());
+			_analyzer = CreateAnalyzer();
 			_writer = new IndexWriter(_dir, _analyzer, IndexWriter.MaxFieldLength.LIMITED);
+			_packets = new Hashtable();
 
 			Packet[] packets = (from server in Servers.All from channel in server.Channels from bot in channel.Bots from packet in bot.Packets select packet).ToArray();
 			foreach (var packet in packets)
@@ -205,6 +206,75 @@ namespace XG.Plugin.Webserver.Search
 			}
 
 			return results;
+		}
+
+		/// <summary>
+		/// Looks up an indexed packet by guid without walking the server tree.
+		/// </summary>
+		public static Packet GetPacket(Guid aGuid)
+		{
+			return _packets[aGuid.ToString()] as Packet;
+		}
+
+		/// <summary>
+		/// Splits free text into the same tokens the Name field is indexed with,
+		/// so that callers can build queries which match packet names exactly.
+		/// </summary>
+		public static string[] AnalyzeName(string aText)
+		{
+			if (string.IsNullOrWhiteSpace(aText))
+			{
+				return new string[0];
+			}
+
+			var tokens = new List<string>();
+			var analyzer = _analyzer ?? CreateAnalyzer();
+			using (var stream = analyzer.TokenStream("Name", new System.IO.StringReader(NormalizeName(aText))))
+			{
+				var term = stream.AddAttribute<Lucene.Net.Analysis.Tokenattributes.ITermAttribute>();
+				while (stream.IncrementToken())
+				{
+					tokens.Add(term.Term);
+				}
+			}
+			return tokens.ToArray();
+		}
+
+		/// <summary>
+		/// Searches with already analyzed tokens. Every required and prefix token must match,
+		/// no excluded token may match. Without any required or prefix token all packets match.
+		/// </summary>
+		public static Result GetResults(IEnumerable<string> aRequired, IEnumerable<string> aExcluded, IEnumerable<string> aPrefixes, bool aShowOfflineBots, int aStart, int aLimit, string aSort, bool aReverse)
+		{
+			var query = new BooleanQuery();
+			bool positive = false;
+			foreach (string str in aRequired)
+			{
+				query.Add(new TermQuery(new Term("Name", str)), Occur.MUST);
+				positive = true;
+			}
+			foreach (string str in aPrefixes)
+			{
+				query.Add(new PrefixQuery(new Term("Name", str)), Occur.MUST);
+				positive = true;
+			}
+			foreach (string str in aExcluded)
+			{
+				query.Add(new TermQuery(new Term("Name", str)), Occur.MUST_NOT);
+			}
+			if (!positive)
+			{
+				query.Add(new MatchAllDocsQuery(), Occur.MUST);
+			}
+			if (!aShowOfflineBots)
+			{
+				query.Add(new TermQuery(new Term("Online", "1")), Occur.MUST);
+			}
+
+			using (var reader = _writer.GetReader())
+			{
+				return GetResult(new IndexSearcher(reader), query, BuildSort(aSort, aReverse), aStart, aLimit);
+			}
 		}
 
 		static Results GetPredefinedResults(IndexSearcher aSearcher, Query aQuery,  Sort aSort, int aStart, int aLimit)
@@ -439,6 +509,16 @@ namespace XG.Plugin.Webserver.Search
 			}
 		}
 
+		static Analyzer CreateAnalyzer()
+		{
+			return new StandardAnalyzer(Lucene.Net.Util.Version.LUCENE_30, new HashSet<string>());
+		}
+
+		static string NormalizeName(string aName)
+		{
+			return aName.Replace("_", " ").Replace("-", " ").Replace(".", " ");
+		}
+
 		static Document PacketToDocument(Packet aPacket)
 		{
 			var name = aPacket.RealName != null && aPacket.RealName != "" ? aPacket.RealName : aPacket.Name;
@@ -446,7 +526,7 @@ namespace XG.Plugin.Webserver.Search
 			var doc = new Document();
 			doc.Add(new Field("Guid", aPacket.Guid.ToString(), Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("Id", "" + aPacket.Id, Field.Store.YES, Field.Index.NOT_ANALYZED));
-			doc.Add(new Field("Name", name.Replace("_", " ").Replace("-", " ").Replace(".", " "), Field.Store.YES, Field.Index.ANALYZED));
+			doc.Add(new Field("Name", NormalizeName(name), Field.Store.YES, Field.Index.ANALYZED));
 			doc.Add(new Field("Size", aPacket.Size.ToString(SIZE_STRING), Field.Store.YES, Field.Index.NOT_ANALYZED ));
 			doc.Add(new Field("Speed", "" + (aPacket.File != null ? aPacket.File.Speed : 0), Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("TimeMissing", "" + (aPacket.File != null ? aPacket.File.TimeMissing : 0), Field.Store.YES, Field.Index.NOT_ANALYZED));
