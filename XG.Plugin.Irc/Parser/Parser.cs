@@ -93,16 +93,24 @@ namespace XG.Plugin.Irc.Parser
 
 		public override bool Parse(Message aMessage)
 		{
-			_messages.Enqueue(aMessage);
+			lock (_messages)
+			{
+				_messages.Enqueue(aMessage);
+			}
 			return _waitHandle.Set();
 		}
 
 		protected void ParseThread()
 		{
-			Message tMessage = null;
 			while (true)
 			{
-				if (_messages.Count == 0)
+				Message tMessage = null;
+				int count;
+				lock (_messages)
+				{
+					count = _messages.Count;
+				}
+				if (count == 0)
 				{
 					_waitHandle.WaitOne();
 				}
@@ -111,11 +119,15 @@ namespace XG.Plugin.Irc.Parser
 					break;
 				}
 
-				try
+				// the wait handle can be signalled while the queue is already empty;
+				// never fall back to the previous message, that would parse it twice
+				lock (_messages)
 				{
-					tMessage = _messages.Dequeue();
+					if (_messages.Count > 0)
+					{
+						tMessage = _messages.Dequeue();
+					}
 				}
-				catch (Exception) {}
 				if (tMessage == null)
 				{
 					continue;

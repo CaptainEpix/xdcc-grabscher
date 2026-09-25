@@ -44,6 +44,10 @@ namespace XG.Plugin.Irc
 
 		readonly HashSet<IrcConnection> _connections = new HashSet<IrcConnection>();
 		readonly HashSet<BotDownload> _botDownloads = new HashSet<BotDownload>();
+
+		// failed DCC connections per packet; some bots only accept connections on part of their ports
+		readonly Dictionary<Guid, int> _connectFailures = new Dictionary<Guid, int>();
+		public const int MaxConnectAttempts = 3;
 		readonly HashSet<Download> _xdccListDownloads = new HashSet<Download>();
 
 		readonly Parser.Parser _parser = new Parser.Parser();
@@ -112,6 +116,16 @@ namespace XG.Plugin.Irc
 
 		protected override void ObjectEnabledChanged(object aSender, EventArgs<AObject> aEventArgs)
 		{
+			// a newly enabled packet gets all connection attempts again
+			var packet = aEventArgs.Value1 as Packet;
+			if (packet != null && packet.Enabled)
+			{
+				lock (_connectFailures)
+				{
+					_connectFailures.Remove(packet.Guid);
+				}
+			}
+
 			if (aEventArgs.Value1 is Server)
 			{
 				var aServer = aEventArgs.Value1 as Server;
@@ -309,6 +323,17 @@ namespace XG.Plugin.Irc
 				try
 				{
 					IrcConnection connection = _connections.SingleOrDefault(c => c.Server == aEventArgs.Value1.Parent.Parent.Parent);
+					if (download.ConnectFailed)
+					{
+						ConnectFailed(aEventArgs.Value1, connection);
+					}
+					else
+					{
+						lock (_connectFailures)
+						{
+							_connectFailures.Remove(aEventArgs.Value1.Guid);
+						}
+					}
 					if (connection != null)
 					{
 						connection.AddBotToQueue(aEventArgs.Value1.Parent, Settings.Default.CommandWaitTime);
@@ -396,6 +421,49 @@ namespace XG.Plugin.Irc
 			foreach (var connection in _connections.ToArray())
 			{
 				connection.TriggerTimerRun();
+			}
+		}
+
+		/// <summary>
+		/// The bot offered a port that could not be connected. Bots keep such an offer pending
+		/// and re-send it when asked again, so cancel it; the next request gets a new port.
+		/// Only after several failed attempts the packet is given up.
+		/// </summary>
+		void ConnectFailed(Packet aPacket, IrcConnection aConnection)
+		{
+			int failures;
+			lock (_connectFailures)
+			{
+				_connectFailures.TryGetValue(aPacket.Guid, out failures);
+				failures++;
+				if (failures < MaxConnectAttempts)
+				{
+					_connectFailures[aPacket.Guid] = failures;
+				}
+				else
+				{
+					_connectFailures.Remove(aPacket.Guid);
+				}
+			}
+
+			if (aConnection != null)
+			{
+				aConnection.CancelOffer(aPacket.Parent);
+				// ask again (or for the bot's next packet) soon, instead of waiting for the
+				// long "did the bot hear us" timer of the original request
+				aConnection.RescheduleBot(aPacket.Parent, Settings.Default.CommandWaitTime);
+			}
+
+			if (failures < MaxConnectAttempts)
+			{
+				_log.Warn("ConnectFailed(" + aPacket + ") attempt " + failures + " of " + MaxConnectAttempts + " failed, requesting again");
+			}
+			else
+			{
+				_log.Error("ConnectFailed(" + aPacket + ") attempt " + failures + " of " + MaxConnectAttempts + " failed, disabling packet");
+				aPacket.Enabled = false;
+				aPacket.Commit();
+				AddNotification(this, new EventArgs<Notification>(new Notification(Notification.Types.BotConnectFailed, aPacket)));
 			}
 		}
 

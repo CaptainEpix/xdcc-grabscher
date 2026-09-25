@@ -24,6 +24,7 @@
 //
 
 using System;
+using System.Collections.Generic;
 using System.Net;
 using NUnit.Framework;
 using XG.Extensions;
@@ -47,6 +48,91 @@ namespace XG.Test.Plugin.Irc.Parser.Types.Dcc
 			Assert.AreEqual(0, raisedEvent.Value2);
 			Assert.AreEqual("71.183.74.242", raisedEvent.Value3.ToString());
 			Assert.AreEqual(45000, raisedEvent.Value4);
+		}
+
+		readonly List<Packet> _addedPackets = new List<Packet>();
+
+		Packet AddPacket(int aId, string aName, bool aEnabled)
+		{
+			var packet = new Packet { Id = aId, Name = aName, Size = 100 };
+			Bot.AddPacket(packet);
+			packet.Enabled = aEnabled;
+			_addedPackets.Add(packet);
+			return packet;
+		}
+
+		// the fixture objects are shared by all tests of this class
+		[TearDown]
+		public void TearDown()
+		{
+			foreach (var packet in _addedPackets)
+			{
+				Bot.RemovePacket(packet);
+			}
+			_addedPackets.Clear();
+			Packet.Enabled = true;
+			Packet.Connected = false;
+		}
+
+		[Test]
+		public void DccOfferMatchedByNameTest()
+		{
+			// the older enabled packet must not take an offer for another file
+			var other = AddPacket(2, "Other.File.S01E02.mkv", true);
+			var parser = new XG.Plugin.Irc.Parser.Types.Dcc.DownloadFromBot();
+			EventArgs<Packet, Int64, IPAddress, int> raisedEvent = null;
+			parser.OnAddDownload += (sender, e) => raisedEvent = e;
+
+			Parse(parser, "\u0001DCC SEND Other.File.S01E02.mkv 1203194610 45001 100\u0001");
+
+			Assert.IsNotNull(raisedEvent);
+			Assert.AreSame(other, raisedEvent.Value1);
+			Assert.AreEqual(45001, raisedEvent.Value4);
+		}
+
+		[Test]
+		public void DccOfferWithQuotedNameTest()
+		{
+			var other = AddPacket(2, "Other File With Spaces.mkv", true);
+			var parser = new XG.Plugin.Irc.Parser.Types.Dcc.DownloadFromBot();
+			EventArgs<Packet, Int64, IPAddress, int> raisedEvent = null;
+			parser.OnAddDownload += (sender, e) => raisedEvent = e;
+
+			Parse(parser, "\u0001DCC SEND \"Other File With Spaces.mkv\" 1203194610 45002 100\u0001");
+
+			Assert.AreSame(other, raisedEvent.Value1);
+		}
+
+		[Test]
+		public void StaleDccOfferIsCancelledTest()
+		{
+			// the bot re-sends its pending offer for a packet XG already gave up on
+			Packet.Enabled = false;
+			AddPacket(2, "Other.File.S01E02.mkv", true);
+			var parser = new XG.Plugin.Irc.Parser.Types.Dcc.DownloadFromBot();
+			EventArgs<Packet, Int64, IPAddress, int> raisedEvent = null;
+			string sentMessage = null;
+			parser.OnAddDownload += (sender, e) => raisedEvent = e;
+			parser.OnSendMessage += (sender, e) => sentMessage = e.Value3 + ": " + e.Value4;
+
+			Parse(parser, "\u0001DCC SEND Testfile.with.a.long.name.mkv 1203194610 45000 975304559\u0001");
+
+			Assert.IsNull(raisedEvent, "a stale offer must not start a download for another packet");
+			Assert.AreEqual(Bot.Name + ": XDCC CANCEL", sentMessage);
+		}
+
+		[Test]
+		public void UnknownOfferNameUsesOldestPacketTest()
+		{
+			// some bots send a different file name than they list; keep the old behaviour then
+			AddPacket(2, "Other.File.S01E02.mkv", true);
+			var parser = new XG.Plugin.Irc.Parser.Types.Dcc.DownloadFromBot();
+			EventArgs<Packet, Int64, IPAddress, int> raisedEvent = null;
+			parser.OnAddDownload += (sender, e) => raisedEvent = e;
+
+			Parse(parser, "\u0001DCC SEND Completely.Different.Name.mkv 1203194610 45003 100\u0001");
+
+			Assert.AreSame(Packet, raisedEvent.Value1);
 		}
 	}
 }

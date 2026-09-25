@@ -444,10 +444,13 @@ namespace XG.Plugin.Webserver.Compat.Sabnzbd
 				bool changed = false;
 				foreach (var job in _jobs.Where(j => j.State == CompatJobState.Active && !j.Finishing && j.PacketGuid == aPacket.Guid))
 				{
-					string message = "XG stopped the download (bot unavailable, request denied or disabled in XG)";
-					if (aPacket.Parent != null && !string.IsNullOrWhiteSpace(aPacket.Parent.LastMessage))
+					var bot = aPacket.Parent;
+					string message = bot != null && bot.HasNetworkProblems
+						? "XG could not open the file transfer from the bot (its DCC port refused the connection or sent no data)"
+						: "XG stopped the download (bot unavailable, request denied or disabled in XG)";
+					if (bot != null && !string.IsNullOrWhiteSpace(bot.LastMessage))
 					{
-						message += ". Last bot message: " + aPacket.Parent.LastMessage;
+						message += ". Last bot message: " + bot.LastMessage;
 					}
 					Fail(job, message);
 					changed = true;

@@ -14,6 +14,8 @@ Every bot has a DCC behaviour, so failures seen with real bots can be replayed:
   refuse     offers a port nobody listens on (like a bot with broken port forwarding)
   flaky      offers ports from a range; only some of them accept connections
              ("port_sequence" fixes the order of offered ports for repeatable runs)
+
+Any bot can set "ignore_cancel" to keep its pending offer despite XDCC CANCEL.
   passive    offers port 0, asking the client to listen (reverse DCC)
   late       starts listening only some time after sending the offer
 
@@ -75,6 +77,7 @@ class Bot:
         self.offers = {}
         self.rng = random.Random(config.get("seed", self.nick))
         self.port_sequence = list(config.get("port_sequence", []))
+        self.ignore_cancel = config.get("ignore_cancel", False)
 
     def announce_lines(self):
         lines = ["** %d packs **  1 of 1 slot open" % len(self.packs)]
@@ -87,6 +90,8 @@ class Bot:
         command = " ".join(words[:2]).upper()
         if command == "XDCC SEND" and len(words) > 2:
             await self.on_send(user, words[2].lstrip("#"))
+        elif command in ("XDCC REMOVE", "XDCC CANCEL") and self.ignore_cancel:
+            log("bot_cancel_ignored", bot=self.nick, user=user.nick, command=command)
         elif command in ("XDCC REMOVE", "XDCC CANCEL"):
             offer = self.offers.pop(user.nick, None)
             log("bot_cancel", bot=self.nick, user=user.nick, command=command, had_offer=offer is not None)

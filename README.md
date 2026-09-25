@@ -118,7 +118,9 @@ Please note:
 
 ### 1. Create an API key in XG
 
-In the XG web interface, open the settings menu (gear icon), choose **Api Keys**, add a key with a name (for example `arr`) and make sure it is enabled. The long value in the **Api Key** column is what Prowlarr, Sonarr and Radarr need.
+In the XG web interface, open the settings menu (gear icon), choose **Api Keys** and add a key with a name (for example `arr`). **New keys start disabled:** click the icon at the left of the key's row to enable it. The long value in the **Api Key** column is what Prowlarr, Sonarr and Radarr need.
+
+If Prowlarr or the *Arr test reports *Incorrect user credentials* or *API Key Incorrect*, the key is usually still disabled.
 
 You can use one key for everything or one key per application.
 
@@ -197,7 +199,8 @@ If you changed the download folder in the XG settings, XG reports that folder in
 - A grab enables the packet in XG, exactly like clicking it in the web interface.
 - The *Arr queue shows the job as *queued* while XG waits for the bot, and as *downloading* with progress and speed during the transfer.
 - When XG has moved the finished file into its download folder, the job moves to history as *completed*, including the file path, and the *Arr imports it.
-- If XG stops the download (bot offline, request denied, pack no longer valid, or disabled by you in XG), the job is marked *failed* and includes the last bot message. The *Arr can then search for another release or retry.
+- Some bots only accept the file transfer on part of the ports they offer. If the transfer connection fails, XG cancels the bot's offer and asks again, up to 3 times, before giving up.
+- If XG stops the download (transfer connection failed 3 times, bot offline, request denied, pack no longer valid, or disabled by you in XG), the job is marked *failed* with the reason and the last bot message. The *Arr can then search for another release or retry.
 - Removing a completed item from the *Arr history only forgets the job. The downloaded file is only deleted when the *Arr explicitly asks to remove the data, and only if it is still that job's file inside XG's download folder.
 - Jobs are stored in `/config/.config/XG/arr-jobs.json` and survive restarts.
 
@@ -206,6 +209,7 @@ If you changed the download folder in the XG settings, XG reports that folder in
 - Text search only; no IMDb/TVDB/TMDB id lookups, no anime absolute episode numbers, and names like `2x05` are not found by episode searches.
 - Removing a *downloading* item from the *Arr queue stops the XDCC transfer, and XG always deletes the partial file, even if the *Arr was asked to keep data.
 - XG has no pause or priorities. SABnzbd priorities are accepted but ignored.
+- Bots that only offer passive (reverse) DCC are not supported; XG reports them as having sent wrong data.
 - All downloads land in XG's single download folder; categories do not get separate folders.
 - Grabbing a packet that is already being downloaded for an *Arr returns the existing job instead of a second one.
 - The reported SABnzbd version is a fixed compatibility value.

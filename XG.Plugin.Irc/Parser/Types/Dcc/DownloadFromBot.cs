@@ -24,6 +24,7 @@
 //  
 
 using System;
+using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
 using Meebey.SmartIrc4net;
@@ -50,7 +51,20 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 				return false;
 			}
 
-			Packet tPacket = tBot.OldestActivePacket();
+			string offeredName = OfferedFileName(text);
+			Packet tPacket = FindEnabledPacket(tBot, offeredName);
+			if (tPacket == null)
+			{
+				// a bot re-sends a pending offer when it is asked again; if that offer is for a
+				// packet we gave up on, tell the bot to drop it instead of using it for another packet
+				if (offeredName != null && tBot.Packets.Any(p => !p.Enabled && NameMatches(p, offeredName)))
+				{
+					Log.Warn("Parse() cancelling stale DCC offer from " + tBot + " for " + offeredName);
+					FireSendMessage(this, new EventArgs<Server, SendType, string, string>(aMessage.Channel.Parent, SendType.Message, tBot.Name, "XDCC CANCEL"));
+					return true;
+				}
+				tPacket = tBot.OldestActivePacket();
+			}
 			if (tPacket == null)
 			{
 				Log.Error("Parse() DCC not activated from " + tBot);
@@ -211,6 +225,62 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 				FireAddDownload(this, new EventArgs<Packet, long, IPAddress, int>(tPacket, startSize, tBot.IP, tPort));
 			}
 			return true;
+		}
+
+		/// <summary>
+		/// The file name of a DCC SEND or DCC ACCEPT offer.
+		/// </summary>
+		static string OfferedFileName(string aText)
+		{
+			if (aText.StartsWith("SEND \"", StringComparison.Ordinal))
+			{
+				Match tMatch = Regex.Match(aText, "SEND \"(?<packet_name>.+)\"(?<bot_data>[^\"]+)$");
+				return tMatch.Success ? tMatch.Groups["packet_name"].ToString() : null;
+			}
+			string[] tDataList = aText.Split(' ');
+			return tDataList.Length > 1 && (tDataList[0] == "SEND" || tDataList[0] == "ACCEPT") ? tDataList[1] : null;
+		}
+
+		/// <summary>
+		/// The enabled packet the offer is for. Bots offer their files under the listed
+		/// name, so offers are matched by name instead of taking the oldest enabled packet.
+		/// </summary>
+		static Packet FindEnabledPacket(Bot aBot, string aOfferedName)
+		{
+			if (aOfferedName == null)
+			{
+				return null;
+			}
+			return aBot.Packets.Where(p => p.Enabled && NameMatches(p, aOfferedName)).OrderBy(p => p.EnabledTime).FirstOrDefault();
+		}
+
+		static bool NameMatches(Packet aPacket, string aOfferedName)
+		{
+			string offered = Shrink(aOfferedName);
+			if (offered == null)
+			{
+				return false;
+			}
+			foreach (string name in new[] { aPacket.RealName, aPacket.Name })
+			{
+				string candidate = Shrink(name);
+				if (candidate != null && (candidate == offered || candidate.EndsWith(offered, StringComparison.Ordinal) || offered.EndsWith(candidate, StringComparison.Ordinal)))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
+
+		static string Shrink(string aName)
+		{
+			if (string.IsNullOrEmpty(aName))
+			{
+				return null;
+			}
+			string name = XG.Model.Domain.Helper.ShrinkFileName(aName, 0);
+			// only the size suffix left, e.g. a name without latin letters or digits
+			return name.Length > 2 ? name : null;
 		}
 	}
 }

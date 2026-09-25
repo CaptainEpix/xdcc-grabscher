@@ -863,6 +863,15 @@ namespace XG.Plugin.Irc
 			catch (NotConnectedException) {}
 		}
 
+		public void XdccCancel(Bot aBot)
+		{
+			try
+			{
+				_client.SendMessage(SendType.Message, aBot.Name, "XDCC CANCEL");
+			}
+			catch (NotConnectedException) {}
+		}
+
 		public void XdccRemove(Bot aBot)
 		{
 			try

@@ -64,6 +64,11 @@ namespace XG.Plugin.Irc
 		public Files Files { get; set; }
 
 		public Int64 StartSize { get; set; }
+
+		/// <summary>
+		/// The bot's DCC port could not be connected; the plugin decides whether to ask again.
+		/// </summary>
+		public bool ConnectFailed { get; private set; }
 		public IPAddress IP { get; set; }
 		public int Port { get; set; }
 		public Int64 MaxData { get; set; }
@@ -358,14 +363,12 @@ namespace XG.Plugin.Irc
 			// the connection didnt even connected to the given ip and port
 			else
 			{
-				// lets disable the packet, because the bot seems to have broken config or is firewalled
-				_log.Error("FinishWriting(" + Packet + ") connection did not work, disabling packet");
-				Packet.Enabled = false;
+				// the bot seems to have a broken config or is firewalled; the plugin retries or disables the packet
+				_log.Error("FinishWriting(" + Packet + ") connection did not work");
+				ConnectFailed = true;
 
 				Packet.Parent.HasNetworkProblems = true;
 				Packet.Parent.Commit();
-
-				FireNotificationAdded(Notification.Types.BotConnectFailed, Packet);
 			}
 
 			if (OnDisconnected != null)

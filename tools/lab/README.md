@@ -27,6 +27,10 @@ tail /tmp/lab-state/irc.log                    # bots (JSON events)
 tools/lab/stop.sh /tmp/lab-state
 ```
 
+`tools/lab/check.sh <build dir>` runs the whole Prowlarr/Sonarr path (search,
+NZB, addfile, download, history) against a good, a flaky and a refusing bot and
+fails unless both downloads complete and the refusing bot fails cleanly.
+
 The lab API key is `0b1f5e2a-6c3d-4e7f-9a8b-1c2d3e4f5a6b` (override with
 `XG_LAB_API_KEY`), so the Newznab and SABnzbd APIs can be driven with curl
 exactly like Prowlarr, Sonarr and Radarr do.
@@ -37,7 +41,7 @@ Files:
 - `scenarios/*.json` – bot setups
 - `XgLab.cs` – starts XG like XG.Application, seeds the lab server and API key
 - `kernel32shim.c` – lets the NuGet db4o build run on Linux Mono
-- `build.sh`, `run.sh`, `stop.sh`
+- `build.sh`, `run.sh`, `stop.sh`, `check.sh`
 
 On the very first start XG may crash while creating `xgsnapshots.db`
 (an existing issue in the RRD code); starting it again works.

@@ -551,6 +551,23 @@ if (!String.IsNullOrEmpty(commandForLog) &&
 			}
 		}
 
+		/// <summary>
+		/// Asks the bot to drop its pending DCC offer, so the next request gets a new one.
+		/// </summary>
+		public void CancelOffer(Bot aBot)
+		{
+			_log.Info("CancelOffer(" + aBot + ")");
+			_client.XdccCancel(aBot);
+		}
+
+		/// <summary>
+		/// Requests from the bot again after the given time, replacing an already scheduled request.
+		/// </summary>
+		public void RescheduleBot(Bot aBot, int aSeconds)
+		{
+			_botQueue.Add(aBot, DateTime.Now.AddSeconds(aSeconds));
+		}
+
 		public void AddBotToQueue(Bot aBot, int aInt)
 		{
 			if (!_botQueue.Contains(aBot))

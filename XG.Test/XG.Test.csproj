@@ -135,6 +135,8 @@
     <Compile Include="Plugin\ElasticSearch\Object\Packet.cs" />
     <Compile Include="Plugin\Irc\Parser\Types\Dcc\Version.cs" />
     <Compile Include="Plugin\Irc\Parser\Types\Dcc\DownloadFromBot.cs" />
+    <Compile Include="Plugin\Irc\Parser\Types\Xdcc\DccPending.cs" />
+    <Compile Include="Plugin\Irc\Parser\Parser.cs" />
     <Compile Include="Business\Helper\Objects.cs" />
     <Compile Include="Plugin\Webserver\Search\Packets.cs" />
     <Compile Include="Business\Helper\FileActions.cs" />
