@@ -15,7 +15,9 @@ Every bot has a DCC behaviour, so failures seen with real bots can be replayed:
   flaky      offers ports from a range; only some of them accept connections
              ("port_sequence" fixes the order of offered ports for repeatable runs)
 
-  passive    offers port 0, asking the client to listen (reverse DCC)
+  passive    offers port 0 and a token, asking the client to listen (reverse DCC);
+             connects to the address and port the client answers with
+  silent     never answers XDCC requests (an offline or ignoring bot)
   late       starts listening only some time after sending the offer
 
 Any bot can set "ignore_cancel" to keep its pending offer despite XDCC CANCEL,
@@ -67,6 +69,7 @@ class Offer:
         self.created = created
         self.server = None
         self.start = 0
+        self.token = random.randint(1, 99999)
 
 
 class Bot:
@@ -96,7 +99,9 @@ class Bot:
     async def on_private(self, user, text):
         words = text.strip().split()
         command = " ".join(words[:2]).upper()
-        if command == "XDCC SEND" and len(words) > 2:
+        if self.mode == "silent":
+            log("bot_silent", bot=self.nick, user=user.nick, text=text)
+        elif command == "XDCC SEND" and len(words) > 2:
             await self.on_send(user, words[2].lstrip("#"))
         elif command in ("XDCC REMOVE", "XDCC CANCEL") and self.ignore_cancel:
             log("bot_cancel_ignored", bot=self.nick, user=user.nick, command=command)
@@ -108,14 +113,35 @@ class Bot:
             await user.notice(self.nick, "** Cancelled pending DCC offer" if offer else "** You don't appear to be in a queue")
 
     async def on_resume(self, user, words):
-        # DCC RESUME <file> <port> <position>
+        # DCC RESUME <file> <port> <position> [<token> for passive offers]
         offer = self.offers.get(user.nick)
-        if not offer or len(words) < 5 or int(words[3]) != offer.port:
+        if not offer or len(words) < 5 or int(words[3]) != offer.port or (offer.port == 0 and (len(words) < 6 or words[5] != str(offer.token))):
             log("bot_resume_rejected", bot=self.nick, request=" ".join(words))
             return
         offer.start = int(words[4])
         log("bot_resume", bot=self.nick, pack=offer.pack["id"], port=offer.port, start=offer.start)
-        await user.privmsg(self.nick, "\x01DCC ACCEPT %s %d %d\x01" % (words[2], offer.port, offer.start))
+        if offer.port == 0:
+            await user.privmsg(self.nick, "\x01DCC ACCEPT %s 0 %d %d\x01" % (words[2], offer.start, offer.token))
+        else:
+            await user.privmsg(self.nick, "\x01DCC ACCEPT %s %d %d\x01" % (words[2], offer.port, offer.start))
+
+    async def on_passive_reply(self, user, words):
+        # DCC SEND <file> <ip as number> <port> <size> <token>: the client listens, connect to it
+        offer = self.offers.get(user.nick)
+        if not offer or offer.port != 0 or len(words) < 7 or words[6] != str(offer.token):
+            log("bot_passive_reply_rejected", bot=self.nick, request=" ".join(words))
+            return
+        number = int(words[3])
+        host = "%d.%d.%d.%d" % (number >> 24 & 255, number >> 16 & 255, number >> 8 & 255, number & 255)
+        port = int(words[4])
+        log("bot_passive_connect", bot=self.nick, pack=offer.pack["id"], host=host, port=port, start=offer.start)
+        try:
+            reader, writer = await asyncio.open_connection(host, port)
+        except OSError as ex:
+            log("bot_passive_connect_failed", bot=self.nick, host=host, port=port, error=str(ex))
+            self.offers.pop(user.nick, None)
+            return
+        asyncio.ensure_future(self.transfer(user, offer, writer))
 
     async def on_send(self, user, pack_id):
         try:
@@ -157,7 +183,7 @@ class Bot:
     async def send_offer(self, user, offer):
         pack = offer.pack
         if offer.port == 0:
-            line = "\x01DCC SEND %s %d 0 %d %d\x01" % (pack["name"], 2130706433, pack["size"], 1234)
+            line = "\x01DCC SEND %s %d 0 %d %d\x01" % (pack["name"], 2130706433, pack["size"], offer.token)
         else:
             line = "\x01DCC SEND %s %d %d %d\x01" % (pack["name"], 2130706433, offer.port, pack["size"])
         await user.privmsg(self.nick, line)
@@ -168,35 +194,39 @@ class Bot:
 
         async def handle(reader, writer):
             log("bot_connected", bot=self.nick, port=offer.port, pack=offer.pack["id"])
-            data = file_bytes(offer.pack["name"], offer.pack["size"])[offer.start:]
-            if isinstance(self.cut_after, list):
-                cut = self.cut_after.pop(0) if self.cut_after else None
-            else:
-                cut = self.cut_after or None
-            if cut is not None and self.cut_times > 0:
-                self.cut_times -= 1
-                data = data[:cut]
-                log("bot_cutting", bot=self.nick, pack=offer.pack["id"], start=offer.start, bytes=len(data))
-            try:
-                for i in range(0, len(data), 65536):
-                    writer.write(data[i:i + 65536])
-                    await writer.drain()
-                    if self.speed:
-                        await asyncio.sleep(65536 / self.speed)
-                log("bot_sent", bot=self.nick, pack=offer.pack["id"], start=offer.start, bytes=len(data))
-                await asyncio.sleep(1)
-            except (ConnectionError, OSError) as ex:
-                log("bot_send_failed", bot=self.nick, pack=offer.pack["id"], error=str(ex))
-            finally:
-                writer.close()
-                self.offers.pop(user.nick, None)
-                self.close_offer(offer)
+            await self.transfer(user, offer, writer)
 
         try:
             offer.server = await asyncio.start_server(handle, "127.0.0.1", offer.port, reuse_address=True)
             log("bot_listening", bot=self.nick, port=offer.port)
         except OSError as ex:
             log("bot_listen_failed", bot=self.nick, port=offer.port, error=str(ex))
+
+    async def transfer(self, user, offer, writer):
+        data = file_bytes(offer.pack["name"], offer.pack["size"])[offer.start:]
+        if isinstance(self.cut_after, list):
+            cut = self.cut_after.pop(0) if self.cut_after else None
+        else:
+            cut = self.cut_after or None
+        if cut is not None and self.cut_times > 0:
+            self.cut_times -= 1
+            data = data[:cut]
+            log("bot_cutting", bot=self.nick, pack=offer.pack["id"], start=offer.start, bytes=len(data))
+        try:
+            for i in range(0, len(data), 65536):
+                writer.write(data[i:i + 65536])
+                await writer.drain()
+                if self.speed:
+                    await asyncio.sleep(65536 / self.speed)
+            log("bot_sent", bot=self.nick, pack=offer.pack["id"], start=offer.start, bytes=len(data))
+            await asyncio.sleep(1)
+        except (ConnectionError, OSError) as ex:
+            log("bot_send_failed", bot=self.nick, pack=offer.pack["id"], error=str(ex))
+        finally:
+            writer.close()
+            if self.offers.get(user.nick) is offer:
+                self.offers.pop(user.nick, None)
+            self.close_offer(offer)
 
     def expire(self, nick, offer):
         if self.offers.get(nick) is offer:
@@ -286,6 +316,8 @@ class Network:
                         await user.notice(bot.nick, "\x01VERSION iroffer-dinoex 3.33 [lab]\x01")
                     elif text.upper().startswith("\x01DCC RESUME"):
                         await bot.on_resume(user, text.strip("\x01").split())
+                    elif text.upper().startswith("\x01DCC SEND"):
+                        await bot.on_passive_reply(user, text.strip("\x01").split())
                 else:
                     await bot.on_private(user, text)
         elif command in ("MODE", "WHO", "USERHOST", "ISON"):

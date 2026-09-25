@@ -4,7 +4,9 @@ Runs the real XG application against a local fake IRC network with scripted
 XDCC bots, so downloads and the Prowlarr/Sonarr/Radarr APIs can be tested
 without real IRC networks. Bots can be told to misbehave the way real bots do
 (refused DCC ports, passive DCC, flaky port forwarding, late listeners,
-dropped transfers); they support DCC RESUME like iroffer.
+dropped transfers, never answering); they support DCC RESUME like iroffer,
+also for passive transfers. Lab builds run with passive DCC on ports
+15600-15604 (`XG_PASSIVE_DCC_PORTS=` turns it off).
 
 Requirements: Mono (`mono-devel`, `mono-xbuild`), `gcc`, Python 3 and access to
 `api.nuget.org`. No Docker needed.
@@ -29,13 +31,14 @@ tools/lab/stop.sh /tmp/lab-state
 ```
 
 `tools/lab/check.sh <build dir>` runs the whole Prowlarr/Sonarr path (search,
-NZB, addfile, download, history) against a good, a flaky, a refusing and a mute bot and
-fails unless the other downloads complete, the refusing bot fails cleanly and a
-second grab of the same release completes quickly under a new name.
+NZB, addfile, download, history) against a good, a flaky, a refusing, a mute, a
+passive and a silent bot and fails unless the downloads complete, the refusing
+and the silent bot fail cleanly and a second grab of the same release completes
+quickly under a new name.
 
-`tools/lab/check-resume.sh <build dir>` breaks transfers midway, within one bot
-and across two bots offering the same file, and fails unless XG resumes and the
-finished files are complete and byte-identical.
+`tools/lab/check-resume.sh <build dir>` breaks transfers midway, within one bot,
+across two bots offering the same file and with a passive bot, and fails unless
+XG resumes and the finished files are complete and byte-identical.
 
 The lab API key is `0b1f5e2a-6c3d-4e7f-9a8b-1c2d3e4f5a6b` (override with
 `XG_LAB_API_KEY`), so the Newznab and SABnzbd APIs can be driven with curl

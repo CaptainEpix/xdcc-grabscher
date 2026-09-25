@@ -28,7 +28,9 @@ fi
 
 touch "$STATE/cmd"
 cd "$XG"
+# passive DCC on local ports; set XG_PASSIVE_DCC_PORTS= (empty) to test without it
 (tail -n 0 -f "$STATE/cmd" | HOME="$STATE/home" XDG_CONFIG_HOME="$STATE/home/.config" \
+	XG_PASSIVE_DCC_PORTS="${XG_PASSIVE_DCC_PORTS-15600-15604}" XG_PASSIVE_DCC_IP="${XG_PASSIVE_DCC_IP-127.0.0.1}" \
 	mono XgLab.exe 127.0.0.1 "$IRC_PORT" "$CHANNEL" "$API_KEY" 15556 >"$STATE/xg.log" 2>&1) &
 echo $! >"$STATE/xg.pid"
 

@@ -8,6 +8,8 @@
     { "nick": "LAB-CUT-B", "mode": "good", "ports": [44002], "cut_after": 700000, "cut_times": 1,
       "packs": [ { "id": 1, "name": "Resume.Show.S01E01.720p.mkv", "size": 3145728 } ] },
     { "nick": "LAB-CUT-C", "mode": "good", "ports": [44003], "cut_after": [300000, 2900000],
-      "packs": [ { "id": 1, "name": "Resume.Movie.2014.1080p.mkv", "size": 3145728 } ] }
+      "packs": [ { "id": 1, "name": "Resume.Movie.2014.1080p.mkv", "size": 3145728 } ] },
+    { "nick": "LAB-CUT-P", "mode": "passive", "cut_after": [1200000],
+      "packs": [ { "id": 1, "name": "Resume.Passive.2015.1080p.mkv", "size": 3145728 } ] }
   ]
 }

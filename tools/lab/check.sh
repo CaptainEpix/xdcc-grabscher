@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 # End-to-end check of a lab build through the Newznab and SABnzbd APIs, the way
 # Prowlarr/Sonarr/Radarr use them, against a good, a flaky and a refusing bot,
-# and one that accepts the connection but sends nothing twice.
+# one that accepts the connection but sends nothing twice, a passive DCC bot
+# and a bot that never answers.
 #
 #   tools/lab/check.sh <xg build dir>
 #
-# Expected: good, flaky and mute downloads complete, the refusing bot fails cleanly,
+# Expected: good, flaky, mute and passive downloads complete, the refusing and
+# the silent bot fail cleanly,
 # and grabbing the good release again completes quickly under a new name.
 set -euo pipefail
 XG="$1"
 LAB="$(cd "$(dirname "$0")" && pwd)"
 STATE="$(mktemp -d)"
 K="0b1f5e2a-6c3d-4e7f-9a8b-1c2d3e4f5a6b"
+# fail jobs of silent bots after 30s instead of 15 minutes
+export XG_COMPAT_SILENT_BOT_SECONDS=30
 U="http://127.0.0.1:15556"
 export NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
 trap '"$LAB/stop.sh" "$STATE"' EXIT
@@ -42,11 +46,13 @@ grab "good%20show" tv
 grab "flaky%20movie" movies
 grab "refuse%20show" tv
 grab "mute%20show" tv
+grab "passive%20show" tv
+grab "silent%20show" tv
 
 for i in $(seq 1 40); do
 	sleep 3
 	history=$(curl -sS "$U/sabnzbd/api?mode=history&apikey=$K")
-	[[ $(grep -o '"status":"\(Completed\|Failed\)"' <<<"$history" | wc -l) -ge 4 ]] && break
+	[[ $(grep -o '"status":"\(Completed\|Failed\)"' <<<"$history" | wc -l) -ge 6 ]] && break
 done
 
 python3 - "$history" <<'PY'
@@ -57,6 +63,8 @@ expected = {
     "Flaky.Movie.2014.1080p.mkv": "Completed",
     "Refuse.Show.S01E01.720p.mkv": "Failed",
     "Mute.Show.S01E01.720p.mkv": "Completed",
+    "Passive.Show.S01E01.720p.mkv": "Completed",
+    "Silent.Show.S01E01.720p.mkv": "Failed",
 }
 ok = True
 for name, status in expected.items():
@@ -72,7 +80,7 @@ grab "good%20show" tv
 for i in $(seq 1 15); do
 	sleep 3
 	history=$(curl -sS "$U/sabnzbd/api?mode=history&apikey=$K")
-	[[ $(grep -o '"status":"\(Completed\|Failed\)"' <<<"$history" | wc -l) -ge 5 ]] && break
+	[[ $(grep -o '"status":"\(Completed\|Failed\)"' <<<"$history" | wc -l) -ge 7 ]] && break
 done
 python3 - "$history" <<'PY'
 import json, sys

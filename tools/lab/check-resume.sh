@@ -4,6 +4,7 @@
 #    bot, whose first transfer breaks as well
 #  - a bot breaks a transfer early (less than the rollback of 500 KB), and the
 #    retry, which starts over, breaks again shortly before the end
+#  - a passive DCC bot breaks its first transfer, the retry resumes passively
 #
 #   tools/lab/check-resume.sh <xg build dir>
 #
@@ -15,6 +16,7 @@ LAB="$(cd "$(dirname "$0")" && pwd)"
 STATE="$(mktemp -d)"
 NAME="Resume.Show.S01E01.720p.mkv"
 NAME2="Resume.Movie.2014.1080p.mkv"
+NAME3="Resume.Passive.2015.1080p.mkv"
 trap '"$LAB/stop.sh" "$STATE"' EXIT
 
 started() {
@@ -58,16 +60,25 @@ for i in $(seq 1 90); do
 	sleep 1
 	[[ -f "$STATE/home/.config/XG/dl/$NAME2" ]] && break
 done
+
+# bot P: passive, 1.2 MB, then the rest through a passive resume
+echo "enable LAB-CUT-P 1" >>"$STATE/cmd"
+for i in $(seq 1 60); do
+	sleep 1
+	[[ -f "$STATE/home/.config/XG/dl/$NAME3" ]] && break
+done
 sleep 1
 
-python3 - "$LAB" "$STATE" "$NAME" "$NAME2" <<'PY'
+python3 - "$LAB" "$STATE" "$NAME" "$NAME2" "$NAME3" <<'PY'
 import json, os, sys
 sys.path.insert(0, sys.argv[1])
 from fakeirc import file_bytes
 state = sys.argv[2]
 events = [json.loads(l) for l in open(os.path.join(state, "irc.log")) if l.startswith("{")]
 resumes = [e for e in events if e["event"] == "bot_resume" and e["bot"] == "LAB-CUT-B"]
-checks = [("bot B was asked to resume the partial file of bot A", len(resumes) > 0 and resumes[0]["start"] > 0)]
+passive_resumes = [e for e in events if e["event"] == "bot_resume" and e["bot"] == "LAB-CUT-P"]
+checks = [("bot B was asked to resume the partial file of bot A", len(resumes) > 0 and resumes[0]["start"] > 0),
+          ("the passive bot was asked to resume", len(passive_resumes) > 0 and passive_resumes[0]["start"] > 0)]
 for name in sys.argv[3:]:
     path = os.path.join(state, "home/.config/XG/dl", name)
     expected = file_bytes(name, 3145728)
