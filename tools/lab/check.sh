@@ -4,7 +4,8 @@
 #
 #   tools/lab/check.sh <xg build dir>
 #
-# Expected: good and flaky downloads complete, the refusing bot fails cleanly.
+# Expected: good and flaky downloads complete, the refusing bot fails cleanly,
+# and grabbing the good release again completes quickly under a new name.
 set -euo pipefail
 XG="$1"
 LAB="$(cd "$(dirname "$0")" && pwd)"
@@ -59,5 +60,22 @@ for name, status in expected.items():
     got = slots.get(name, {}).get("status", "missing")
     print(("ok   " if got == status else "FAIL ") + name + ": " + got + " (expected " + status + ")")
     ok = ok and got == status
+sys.exit(0 if ok else 1)
+PY
+
+# grabbing the same release again must not wait for the old request timer
+# and must not replace the first file
+grab "good%20show" tv
+for i in $(seq 1 15); do
+	sleep 3
+	history=$(curl -sS "$U/sabnzbd/api?mode=history&apikey=$K")
+	[[ $(grep -o '"status":"\(Completed\|Failed\)"' <<<"$history" | wc -l) -ge 4 ]] && break
+done
+python3 - "$history" <<'PY'
+import json, sys
+paths = sorted(s["storage"] for s in json.loads(sys.argv[1])["history"]["slots"]
+               if s["name"] == "Good.Show.S01E01.720p.mkv" and s["status"] == "Completed")
+ok = len(paths) == 2 and paths[0].endswith("Good.Show.S01E01.720p (1).mkv")
+print(("ok   " if ok else "FAIL ") + "second grab of Good.Show.S01E01.720p.mkv: " + ", ".join(paths))
 sys.exit(0 if ok else 1)
 PY

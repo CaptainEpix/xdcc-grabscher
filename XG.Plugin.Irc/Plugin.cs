@@ -336,7 +336,8 @@ namespace XG.Plugin.Irc
 					}
 					if (connection != null)
 					{
-						connection.AddBotToQueue(aEventArgs.Value1.Parent, Settings.Default.CommandWaitTime);
+						// the bot answered, so the "no answer" timer of the request is obsolete and would delay the next packet up to BotWaitTime
+						connection.RescheduleBot(aEventArgs.Value1.Parent, Settings.Default.CommandWaitTime);
 					}
 				}
 				catch (Exception ex)
