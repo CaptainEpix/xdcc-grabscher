@@ -43,8 +43,14 @@ namespace XG.Test.Plugin.Irc.Parser
 					Packet.Connected = false;
 					parser.Parse(new Message { Channel = Channel, Nick = Bot.Name, Text = "** Sending you pack #1 (\"Testfile.with.a.long.name.mkv\"), which is 930MB. (resume supported)" });
 					parser.Parse(new Message { Channel = Channel, Nick = Bot.Name, Text = "\u0001DCC SEND Testfile.with.a.long.name.mkv 1203194610 45000 975304559\u0001" });
+					// parsing runs on its own thread and is slow on a cold start, so wait for the offer,
+					// then a little more for a second, wrong one
+					for (int wait = 0; wait < 200 && downloads == 0; wait++)
+					{
+						Thread.Sleep(10);
+					}
 					Thread.Sleep(50);
-					Assert.AreEqual(1, downloads, "the DCC offer was parsed more than once in round " + a);
+					Assert.AreEqual(1, downloads, "the DCC offer was not parsed exactly once in round " + a);
 				}
 			}
 			finally
