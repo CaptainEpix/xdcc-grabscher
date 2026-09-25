@@ -47,6 +47,9 @@ namespace XG.Plugin.Webserver
 		IDisposable _server;
 		SignalR.EventForwarder _eventForwarder;
 		CompatJobTracker _compatJobTracker;
+		System.Threading.Timer _silentBotTimer;
+
+		static readonly log4net.ILog Log = log4net.LogManager.GetLogger(typeof(Plugin));
 
 		public RrdDb RrdDB { get; set; }
 
@@ -142,9 +145,19 @@ namespace XG.Plugin.Webserver
 				Search.Packets.GetPacket,
 				() => Settings.Default.ReadyPath);
 
+			// XG_COMPAT_SILENT_BOT_SECONDS changes how long a silent bot is waited for
+			int seconds;
+			if (int.TryParse(Environment.GetEnvironmentVariable("XG_COMPAT_SILENT_BOT_SECONDS"), out seconds) && seconds > 0)
+			{
+				_compatJobTracker.SilentBotTimeout = TimeSpan.FromSeconds(seconds);
+			}
+
 			FileActions.OnFileFinishing += FileFinishing;
 			FileActions.OnFileFinished += FileFinished;
 			_compatJobTracker.Start();
+
+			var interval = TimeSpan.FromSeconds(Math.Max(5, Math.Min(60, _compatJobTracker.SilentBotTimeout.TotalSeconds / 4)));
+			_silentBotTimer = new System.Threading.Timer(CheckSilentBots, null, interval, interval);
 
 			Nancy.Compat.SabnzbdModule.Handler = new SabnzbdHandler(_compatJobTracker, CompatApiKeys.IsValid, () => Settings.Default.ReadyPath);
 		}
@@ -152,8 +165,25 @@ namespace XG.Plugin.Webserver
 		void StopCompat()
 		{
 			Nancy.Compat.SabnzbdModule.Handler = null;
+			if (_silentBotTimer != null)
+			{
+				_silentBotTimer.Dispose();
+				_silentBotTimer = null;
+			}
 			FileActions.OnFileFinishing -= FileFinishing;
 			FileActions.OnFileFinished -= FileFinished;
+		}
+
+		void CheckSilentBots(object aState)
+		{
+			try
+			{
+				_compatJobTracker.CheckSilentBots(DateTime.UtcNow);
+			}
+			catch (Exception ex)
+			{
+				Log.Error("CheckSilentBots()", ex);
+			}
 		}
 
 		void FileFinishing(object aSender, EventArgs<File, Packet[]> aEventArgs)

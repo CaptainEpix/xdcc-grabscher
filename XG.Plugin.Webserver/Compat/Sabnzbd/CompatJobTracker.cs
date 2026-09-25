@@ -24,6 +24,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using log4net;
+using XG.Business.Helper;
 using XG.Model.Domain;
 
 namespace XG.Plugin.Webserver.Compat.Sabnzbd
@@ -61,6 +62,17 @@ namespace XG.Plugin.Webserver.Compat.Sabnzbd
 		// finished jobs which are never removed by a client are dropped eventually
 		public const int MaxFinishedJobs = 1000;
 
+		// XG asks a silent bot again and again, so without a limit the client would wait forever
+		public static readonly TimeSpan DefaultSilentBotTimeout = TimeSpan.FromMinutes(15);
+
+		/// <summary>
+		/// How long a bot may stay silent after XG asked it for a packet before the job fails.
+		/// </summary>
+		public TimeSpan SilentBotTimeout { get; set; }
+
+		// when a bot was last seen sending us a file; its next packet is only asked for afterwards
+		readonly Dictionary<Guid, DateTime> _botBusy = new Dictionary<Guid, DateTime>();
+
 		readonly object _lock = new object();
 		readonly CompatJobStore _store;
 		readonly Func<Guid, Packet> _packetLookup;
@@ -72,6 +84,7 @@ namespace XG.Plugin.Webserver.Compat.Sabnzbd
 			_store = aStore;
 			_packetLookup = aPacketLookup;
 			_readyPath = aReadyPath;
+			SilentBotTimeout = DefaultSilentBotTimeout;
 		}
 
 		#region LIFECYCLE
@@ -433,6 +446,59 @@ namespace XG.Plugin.Webserver.Compat.Sabnzbd
 
 		#region XG EVENTS
 
+		/// <summary>
+		/// Fails the jobs whose bot did not answer at all since XG asked it for the packet,
+		/// so the client can try another release. Bots which answered, e.g. with a queue
+		/// position, are waited for as long as it takes.
+		/// </summary>
+		public int CheckSilentBots(DateTime aNowUtc)
+		{
+			var packetsToStop = new List<Packet>();
+			lock (_lock)
+			{
+				foreach (var job in _jobs.Where(j => j.State == CompatJobState.Active && !j.Finishing).ToList())
+				{
+					var packet = _packetLookup(job.PacketGuid);
+					var bot = packet != null ? packet.Parent : null;
+					if (bot == null || !packet.Enabled)
+					{
+						continue;
+					}
+					if (bot.Packets.Any(p => p.Connected))
+					{
+						_botBusy[bot.Guid] = aNowUtc;
+						continue;
+					}
+
+					DateTime since = job.Added;
+					DateTime busy;
+					if (_botBusy.TryGetValue(bot.Guid, out busy) && busy > since)
+					{
+						since = busy;
+					}
+					if (bot.LastMessageTime.ToUniversalTime() > since || aNowUtc - since < SilentBotTimeout)
+					{
+						continue;
+					}
+
+					Fail(job, "The bot " + bot.Name + " did not answer XG's requests for " + Math.Round(SilentBotTimeout.TotalMinutes, 1) + " minutes (it may be offline, overloaded or ignoring XG)");
+					packetsToStop.Add(packet);
+				}
+				if (packetsToStop.Count > 0)
+				{
+					Save();
+				}
+			}
+
+			// the jobs are failed already, so this only stops XG from asking again
+			foreach (var packet in packetsToStop)
+			{
+				packet.Enabled = false;
+				packet.Commit();
+			}
+			return packetsToStop.Count;
+		}
+
 		public void PacketEnabledChanged(Packet aPacket)
 		{
 			if (aPacket.Enabled)
@@ -445,9 +511,7 @@ namespace XG.Plugin.Webserver.Compat.Sabnzbd
 				foreach (var job in _jobs.Where(j => j.State == CompatJobState.Active && !j.Finishing && j.PacketGuid == aPacket.Guid))
 				{
 					var bot = aPacket.Parent;
-					string message = bot != null && bot.HasNetworkProblems
-						? "XG could not open the file transfer from the bot (its DCC port refused the connection or sent no data)"
-						: "XG stopped the download (bot unavailable, request denied or disabled in XG)";
+					string message = FailMessage(bot);
 					if (bot != null && !string.IsNullOrWhiteSpace(bot.LastMessage))
 					{
 						message += ". Last bot message: " + bot.LastMessage;
@@ -543,6 +607,29 @@ namespace XG.Plugin.Webserver.Compat.Sabnzbd
 		#endregion
 
 		#region HELPER
+
+		static string FailMessage(Bot aBot)
+		{
+			// a passive offer just now
+			if (aBot != null && aBot.PassiveDccTime > DateTime.Now.AddMinutes(-10))
+			{
+				if (!PassiveDcc.Enabled)
+				{
+					return "The bot only offers passive DCC transfers, which need XG_PASSIVE_DCC_PORTS forwarded to XG";
+				}
+				if (aBot.HasNetworkProblems)
+				{
+					return "The bot did not connect to XG's passive DCC port (check that the XG_PASSIVE_DCC_PORTS are forwarded to XG)";
+				}
+				if (!PassiveDcc.HasPublicAddress)
+				{
+					return "XG could not answer the bot's passive DCC offer, its public address is unknown (set XG_PASSIVE_DCC_IP)";
+				}
+			}
+			return aBot != null && aBot.HasNetworkProblems
+				? "XG could not open the file transfer from the bot (its DCC port refused the connection or sent no data)"
+				: "XG stopped the download (bot unavailable, request denied or disabled in XG)";
+		}
 
 		void Complete(CompatJob aJob, string aPath)
 		{

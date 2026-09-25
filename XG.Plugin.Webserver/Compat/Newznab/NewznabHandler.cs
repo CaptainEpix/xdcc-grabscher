@@ -25,6 +25,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using log4net;
+using XG.Business.Helper;
 using XG.Model.Domain;
 
 namespace XG.Plugin.Webserver.Compat.Newznab
@@ -110,7 +111,7 @@ namespace XG.Plugin.Webserver.Compat.Newznab
 		{
 			// bots announce their packets over and over, so the recent feed goes by when a packet started to offer its file
 			string sort = aRequest.IsRecent ? "LastUpdated" : "LastMentioned";
-			var result = Webserver.Search.Packets.GetResults(aRequest.Required, aRequest.Excluded, aRequest.Prefixes, aRequest.ShowOfflineBots, true, aRequest.Offset, aRequest.Limit, sort, true);
+			var result = Webserver.Search.Packets.GetResults(aRequest.Required, aRequest.Excluded, aRequest.Prefixes, aRequest.ShowOfflineBots, !PassiveDcc.Enabled, aRequest.Offset, aRequest.Limit, sort, true);
 
 			var items = new List<NewznabItem>();
 			foreach (var packet in result.Packets)

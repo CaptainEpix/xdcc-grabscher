@@ -107,6 +107,24 @@ namespace XG.Test.Plugin.Webserver.Compat
 		}
 
 		[Test]
+		public void PassiveBotsHiddenUnlessSupportedTest()
+		{
+			try
+			{
+				_data.OnlineBot.PassiveDccTime = DateTime.Now;
+				_data.OnlineBot.Commit();
+				Assert.IsEmpty(Titles(Search("t", "search", "q", "Some Movie 2024")), "XG can not download from this bot");
+
+				XG.Business.Helper.PassiveDcc.Configure("50000-50004", null, "127.0.0.1", null);
+				Assert.AreEqual(new[] { _data.Movie.Name }, Titles(Search("t", "search", "q", "Some Movie 2024")).ToArray());
+			}
+			finally
+			{
+				XG.Business.Helper.PassiveDcc.Configure(null, null, null, null);
+			}
+		}
+
+		[Test]
 		public void GenericSearchTest()
 		{
 			var doc = Search("t", "search", "q", "Some Movie 2024");

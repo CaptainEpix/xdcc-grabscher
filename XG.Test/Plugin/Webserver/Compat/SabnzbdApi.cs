@@ -310,6 +310,61 @@ namespace XG.Test.Plugin.Webserver.Compat
 		}
 
 		[Test]
+		public void SilentBotFailsTest()
+		{
+			string id = AddFile(_data.Episode205);
+			var added = DateTime.UtcNow;
+
+			Assert.AreEqual(0, _tracker.CheckSilentBots(added.AddMinutes(10)));
+			Assert.AreEqual(1, Call("mode", "queue")["queue"]["slots"].Count());
+
+			Assert.AreEqual(1, _tracker.CheckSilentBots(added.AddMinutes(16)));
+			var slot = Call("mode", "history")["history"]["slots"].Single();
+			Assert.AreEqual(id, (string)slot["nzo_id"]);
+			Assert.AreEqual("Failed", (string)slot["status"]);
+			StringAssert.Contains("did not answer", (string)slot["fail_message"]);
+			Assert.IsFalse(_data.Episode205.Enabled, "XG stops asking the silent bot");
+		}
+
+		[Test]
+		public void AnsweringBotIsWaitedForTest()
+		{
+			AddFile(_data.Episode205);
+			// e.g. a queue position; the bot may take hours then
+			_data.OnlineBot.LastMessage = "** All Slots Full, Added you to the main queue in position 7";
+
+			Assert.AreEqual(0, _tracker.CheckSilentBots(DateTime.UtcNow.AddHours(5)));
+			Assert.AreEqual(1, Call("mode", "queue")["queue"]["slots"].Count());
+		}
+
+		[Test]
+		public void BusyBotIsNotSilentTest()
+		{
+			AddFile(_data.Episode205);
+			var start = DateTime.UtcNow;
+			// the bot sends another packet first, XG asks for this one afterwards
+			_data.Episode206.Connected = true;
+			Assert.AreEqual(0, _tracker.CheckSilentBots(start.AddMinutes(30)));
+			_data.Episode206.Connected = false;
+
+			Assert.AreEqual(0, _tracker.CheckSilentBots(start.AddMinutes(40)), "the silence starts after the other transfer");
+			Assert.AreEqual(1, _tracker.CheckSilentBots(start.AddMinutes(46)));
+		}
+
+		[Test]
+		public void PassiveOfferFailMessageTest()
+		{
+			AddFile(_data.Episode205);
+			_data.OnlineBot.PassiveDccTime = DateTime.Now;
+			_data.Episode205.Enabled = false;
+			_tracker.PacketEnabledChanged(_data.Episode205);
+
+			var slot = Call("mode", "history")["history"]["slots"].Single();
+			StringAssert.Contains("passive DCC", (string)slot["fail_message"]);
+			StringAssert.Contains("XG_PASSIVE_DCC_PORTS", (string)slot["fail_message"]);
+		}
+
+		[Test]
 		public void RemovedPacketFailsTest()
 		{
 			AddFile(_data.Episode205);

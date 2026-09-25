@@ -261,6 +261,20 @@ namespace XG.Business.Helper
 		}
 
 		/// <summary>
+		/// Whether the public address is set or was detected, without looking it up.
+		/// </summary>
+		public static bool HasPublicAddress
+		{
+			get
+			{
+				lock (_lock)
+				{
+					return _configuredAddress != null || _detectedAddress != null;
+				}
+			}
+		}
+
+		/// <summary>
 		/// Looks up the public address in the background, so it is known before the first passive offer.
 		/// </summary>
 		public static void Prepare()

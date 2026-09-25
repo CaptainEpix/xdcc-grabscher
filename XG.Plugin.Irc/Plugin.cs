@@ -63,6 +63,8 @@ namespace XG.Plugin.Irc
 			_parser.OnNotificationAdded += AddNotification;
 			_parser.OnRemoveDownload += (aSender, aEventArgs) => BotDisconnect(aEventArgs.Value1);
 			_parser.Initialize();
+			// know the public address before the first passive offer arrives
+			PassiveDcc.Prepare();
 
 			foreach (Server server in Servers.All)
 			{
