@@ -482,6 +482,69 @@ namespace XG.Test.Plugin.Webserver.Compat
 		}
 
 		[Test]
+		public void CategoryFolderSettingTest()
+		{
+			Assert.IsNull(_tracker.CategoryFolderName("tv"), "off by default");
+
+			_tracker.ConfigureCategoryFolders("tv, Movies");
+			Assert.AreEqual("tv", _tracker.CategoryFolderName("tv"));
+			Assert.AreEqual("movies", _tracker.CategoryFolderName("movies"));
+			Assert.IsNull(_tracker.CategoryFolderName("prowlarr"));
+
+			_tracker.ConfigureCategoryFolders("all");
+			Assert.AreEqual("prowlarr", _tracker.CategoryFolderName("prowlarr"));
+			Assert.AreEqual("tv-sonarr", _tracker.CategoryFolderName("tv-sonarr"));
+			// categories come from the clients, only plain names become folders
+			Assert.IsNull(_tracker.CategoryFolderName("*"));
+			Assert.IsNull(_tracker.CategoryFolderName(".."));
+			Assert.IsNull(_tracker.CategoryFolderName("../etc"));
+			Assert.IsNull(_tracker.CategoryFolderName("tv/../../x"));
+			Assert.IsNull(_tracker.CategoryFolderName(".hidden"));
+			Assert.IsNull(_tracker.CategoryFolderName(""));
+
+			_tracker.ConfigureCategoryFolders("false");
+			Assert.IsNull(_tracker.CategoryFolderName("tv"));
+		}
+
+		[Test]
+		public void CategoryFolderRoutingTest()
+		{
+			_tracker.ConfigureCategoryFolders("tv");
+			AddFile(_data.Episode205, "tv");
+			AddFile(_data.Movie, "movies");
+			var episode = new XG.Model.Domain.File(_data.Episode205.Name, 2000);
+			var movie = new XG.Model.Domain.File(_data.Movie.Name, 1000);
+			_tracker.FileFinishing(episode, new[] { _data.Episode205 });
+			_tracker.FileFinishing(movie, new[] { _data.Movie });
+
+			Assert.AreEqual(Path.Combine(_readyPath, "tv"), _tracker.ReadyFolder(episode, new[] { _data.Episode205 }));
+			Assert.IsNull(_tracker.ReadyFolder(movie, new[] { _data.Movie }), "movies stay in the download folder");
+			// a manual download has no job
+			Assert.IsNull(_tracker.ReadyFolder(new XG.Model.Domain.File(_data.Daily.Name, 3000), new[] { _data.Daily }));
+
+			var config = Call("mode", "get_config")["config"]["categories"].ToDictionary(c => (string)c["name"]);
+			Assert.AreEqual("tv", (string)config["tv"]["dir"]);
+			Assert.AreEqual("", (string)config["movies"]["dir"]);
+		}
+
+		[Test]
+		public void RestartFindsFileInCategoryFolderTest()
+		{
+			string id = AddFile(_data.Episode205, "tv");
+			string folder = Path.Combine(_readyPath, "tv");
+			Directory.CreateDirectory(folder);
+			System.IO.File.WriteAllBytes(Path.Combine(folder, _data.Episode205.Name), new byte[2000]);
+			_data.Episode205.Enabled = false;
+
+			StartTracker();
+
+			var slot = Call("mode", "history")["history"]["slots"].Single();
+			Assert.AreEqual(id, (string)slot["nzo_id"]);
+			Assert.AreEqual("Completed", (string)slot["status"]);
+			Assert.AreEqual(Path.Combine(folder, _data.Episode205.Name), (string)slot["storage"]);
+		}
+
+		[Test]
 		public void CategoriesFromJobsTest()
 		{
 			AddFile(_data.Episode205, "anime");

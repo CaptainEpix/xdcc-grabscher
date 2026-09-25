@@ -161,16 +161,16 @@ namespace XG.Plugin.Webserver.Compat.Sabnzbd
 			});
 		}
 
-		static JObject Category(string aName, string aScript)
+		JObject Category(string aName, string aScript)
 		{
-			// an empty dir means the complete dir itself; XG has no category folders
+			// an empty dir means the complete dir itself
 			return new JObject
 			{
 				{ "name", aName },
 				{ "order", 0 },
 				{ "pp", "" },
 				{ "script", aScript },
-				{ "dir", "" },
+				{ "dir", _tracker.CategoryFolderName(aName) ?? "" },
 				{ "newzbin", "" },
 				{ "priority", -100 }
 			};

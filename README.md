@@ -214,6 +214,18 @@ Remote Path Mapping in Sonarr:
 
 If you changed the download folder in the XG settings, XG reports that folder instead.
 
+### 5. Optional: a folder per category
+
+By default every download lands directly in XG's download folder. With the environment variable `XG_CATEGORY_FOLDERS`, downloads grabbed by an *Arr go into a subfolder named after the category it sent (`tv` from Sonarr, `movies` from Radarr, as set in their download client):
+
+| Value | Effect |
+| --- | --- |
+| *(not set)*, `0`, `false` | everything in the download folder (default) |
+| `all`, `1`, `true` | a folder for every category, e.g. `dl/tv/`, `dl/movies/`, `dl/prowlarr/` |
+| `tv,movies` | folders only for the listed categories; others stay in the download folder |
+
+Packets you start yourself in the XG web interface have no category and stay in the download folder, so other tools (like FileBot) can tell them apart from *Arr downloads. Category names only become folders if they are plain names (letters, digits, space, `.`, `_`, `-`). An existing Remote Path Mapping for the download folder also covers the subfolders.
+
 ### How it behaves
 
 **Searching**
@@ -241,7 +253,7 @@ If you changed the download folder in the XG settings, XG reports that folder in
 - Removing a *downloading* item from the *Arr queue stops the XDCC transfer, and XG always deletes the partial file, even if the *Arr was asked to keep data.
 - XG has no pause or priorities. SABnzbd priorities are accepted but ignored.
 - Bots that only offer passive (reverse) DCC need forwarded ports, see [Passive DCC](#passive-dcc).
-- All downloads land in XG's single download folder; categories do not get separate folders.
+- Categories only get separate folders when `XG_CATEGORY_FOLDERS` is set (see above).
 - Grabbing a packet that is already being downloaded for an *Arr returns the existing job instead of a second one.
 - The reported SABnzbd version is a fixed compatibility value.
 - API keys are passed in the URL, as Newznab and SABnzbd clients expect. Keep XG on your LAN (see below) and do not share these URLs.

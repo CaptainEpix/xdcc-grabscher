@@ -152,6 +152,10 @@ namespace XG.Plugin.Webserver
 				_compatJobTracker.SilentBotTimeout = TimeSpan.FromSeconds(seconds);
 			}
 
+			// XG_CATEGORY_FOLDERS: "all" or a list of categories whose downloads get their own folder
+			_compatJobTracker.ConfigureCategoryFolders(Environment.GetEnvironmentVariable("XG_CATEGORY_FOLDERS"));
+			FileActions.ReadyFolderResolver = _compatJobTracker.ReadyFolder;
+
 			FileActions.OnFileFinishing += FileFinishing;
 			FileActions.OnFileFinished += FileFinished;
 			_compatJobTracker.Start();
@@ -172,6 +176,7 @@ namespace XG.Plugin.Webserver
 			}
 			FileActions.OnFileFinishing -= FileFinishing;
 			FileActions.OnFileFinished -= FileFinished;
+			FileActions.ReadyFolderResolver = null;
 		}
 
 		void CheckSilentBots(object aState)

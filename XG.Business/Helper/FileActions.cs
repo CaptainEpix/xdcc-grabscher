@@ -115,6 +115,37 @@ namespace XG.Business.Helper
 
 		#region FILE
 
+		/// <summary>
+		/// Optional: the folder a finished file goes to instead of the ready folder, null or empty for the ready folder.
+		/// </summary>
+		public static Func<XG.Model.Domain.File, Packet[], string> ReadyFolderResolver { get; set; }
+
+		static string ReadyFolder(XG.Model.Domain.File aFile, Packet[] aPackets)
+		{
+			var resolver = ReadyFolderResolver;
+			if (resolver != null)
+			{
+				try
+				{
+					string folder = resolver(aFile, aPackets);
+					if (!string.IsNullOrEmpty(folder))
+					{
+						if (!folder.EndsWith("" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+						{
+							folder += Path.DirectorySeparatorChar;
+						}
+						Directory.CreateDirectory(folder);
+						return folder;
+					}
+				}
+				catch (Exception ex)
+				{
+					Log.Error("ReadyFolder(" + aFile + ") using the ready folder", ex);
+				}
+			}
+			return Settings.Default.ReadyPath;
+		}
+
 		public static XG.Model.Domain.File TryGetFile(string aName, Int64 aSize)
 		{
 			string name = XG.Model.Domain.Helper.ShrinkFileName(aName, aSize);
@@ -196,8 +227,9 @@ namespace XG.Business.Helper
 				#endregion
 
 				string tmpPath = Settings.Default.TempPath + aFile.TmpName;
-				string readyPath = FileSystem.FreeFileName(Settings.Default.ReadyPath + aFile.Name);
-				if (readyPath != Settings.Default.ReadyPath + aFile.Name)
+				string readyFolder = ReadyFolder(aFile, matchedPackets.ToArray());
+				string readyPath = FileSystem.FreeFileName(readyFolder + aFile.Name);
+				if (readyPath != readyFolder + aFile.Name)
 				{
 					Log.Warn("FinishFile(" + aFile + ") " + aFile.Name + " already exists, saving as " + readyPath);
 				}

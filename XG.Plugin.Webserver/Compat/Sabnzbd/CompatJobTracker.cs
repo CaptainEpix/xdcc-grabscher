@@ -73,6 +73,79 @@ namespace XG.Plugin.Webserver.Compat.Sabnzbd
 		// when a bot was last seen sending us a file; its next packet is only asked for afterwards
 		readonly Dictionary<Guid, DateTime> _botBusy = new Dictionary<Guid, DateTime>();
 
+		/// <summary>
+		/// Put the downloads of every category into a subfolder of the download folder named like the category.
+		/// </summary>
+		public bool AllCategoryFolders { get; set; }
+
+		/// <summary>
+		/// Put the downloads of these categories into subfolders, the others stay in the download folder.
+		/// </summary>
+		public ICollection<string> CategoryFolders { get; set; }
+
+		/// <summary>
+		/// Reads XG_CATEGORY_FOLDERS: empty, "0" or "false" for none, "1", "true" or "all" for all categories,
+		/// or a comma separated list of categories.
+		/// </summary>
+		public void ConfigureCategoryFolders(string aSetting)
+		{
+			AllCategoryFolders = false;
+			CategoryFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			string setting = (aSetting ?? "").Trim();
+			if (setting == "" || setting == "0" || setting.Equals("false", StringComparison.OrdinalIgnoreCase))
+			{
+				return;
+			}
+			if (setting == "1" || setting.Equals("true", StringComparison.OrdinalIgnoreCase) || setting.Equals("all", StringComparison.OrdinalIgnoreCase))
+			{
+				AllCategoryFolders = true;
+				Log.Info("ConfigureCategoryFolders() downloads go into a folder per category");
+				return;
+			}
+			foreach (string category in setting.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries))
+			{
+				CategoryFolders.Add(category.Trim());
+			}
+			Log.Info("ConfigureCategoryFolders() downloads of " + string.Join(", ", CategoryFolders) + " go into a folder per category");
+		}
+
+		static readonly System.Text.RegularExpressions.Regex SafeFolder = new System.Text.RegularExpressions.Regex("^[A-Za-z0-9 _.-]+$");
+
+		/// <summary>
+		/// The folder name of a category, null if its downloads stay in the download folder.
+		/// Categories come from the clients, so only plain names become folders.
+		/// </summary>
+		public string CategoryFolderName(string aCategory)
+		{
+			string category = (aCategory ?? "").Trim();
+			if (category == "" || category == "*" || category.StartsWith(".", StringComparison.Ordinal) || !SafeFolder.IsMatch(category))
+			{
+				return null;
+			}
+			var folders = CategoryFolders;
+			return AllCategoryFolders || (folders != null && folders.Contains(category)) ? category : null;
+		}
+
+		/// <summary>
+		/// Where XG should put a finished file: the category folder of its job, null for the download folder.
+		/// </summary>
+		public string ReadyFolder(XG.Model.Domain.File aFile, Packet[] aPackets)
+		{
+			var guids = PacketGuids(aFile, aPackets);
+			string category;
+			lock (_lock)
+			{
+				var job = _jobs.Where(j => j.State == CompatJobState.Active && guids.Contains(j.PacketGuid)).OrderByDescending(j => j.Finishing).FirstOrDefault();
+				if (job == null)
+				{
+					return null;
+				}
+				category = job.Category;
+			}
+			string folder = CategoryFolderName(category);
+			return folder != null ? Path.Combine(_readyPath(), folder) : null;
+		}
+
 		readonly object _lock = new object();
 		readonly CompatJobStore _store;
 		readonly Func<Guid, Packet> _packetLookup;
@@ -149,16 +222,27 @@ namespace XG.Plugin.Webserver.Compat.Sabnzbd
 				}
 			}
 
-			foreach (string name in names.Distinct())
+			// the category folder, even if category folders were switched off since
+			var folders = new List<string> { _readyPath() };
+			string category = (aJob.Category ?? "").Trim();
+			if (category != "" && category != "*" && !category.StartsWith(".", StringComparison.Ordinal) && SafeFolder.IsMatch(category))
 			{
-				if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+				folders.Insert(0, Path.Combine(_readyPath(), category));
+			}
+
+			foreach (string folder in folders)
+			{
+				foreach (string name in names.Distinct())
 				{
-					continue;
-				}
-				var info = new FileInfo(Path.Combine(_readyPath(), name));
-				if (info.Exists && (aJob.Size <= 0 || info.Length == aJob.Size))
-				{
-					return info.FullName;
+					if (name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+					{
+						continue;
+					}
+					var info = new FileInfo(Path.Combine(folder, name));
+					if (info.Exists && (aJob.Size <= 0 || info.Length == aJob.Size))
+					{
+						return info.FullName;
+					}
 				}
 			}
 			return null;
