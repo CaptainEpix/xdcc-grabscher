@@ -73,7 +73,9 @@ namespace XG.Test.Plugin.Webserver.Compat
 
 		static Packet Add(Bot aBot, int aId, string aName, Int64 aSize, DateTime aLastMentioned)
 		{
+			// in these tests a packet started to offer its file when it was mentioned
 			var packet = new Packet { Id = aId, Name = aName, Size = aSize, LastMentioned = aLastMentioned };
+			packet.LastUpdated = aLastMentioned;
 			aBot.AddPacket(packet);
 			return packet;
 		}
