@@ -46,26 +46,22 @@ namespace XG.Plugin.Irc
 
 		public void Add(T aObj, DateTime aDate)
 		{
-			RemoveExpiredItems();
-
-			if (!Contains(aObj))
-			{
-				_queue.TryAdd(aObj, aDate);
-			}
-			else
-			{
-				_queue[aObj] = aDate;
-			}
+			// expired items must stay until GetExpiredItems hands them out, otherwise
+			// adding one item drops the due items of others (a bot is never requested again)
+			_queue[aObj] = aDate;
 		}
 
 		public IEnumerable<T> GetExpiredItems(bool aRemoveExpiredItems = true)
 		{
-			var keys = (from kvp in _queue where (kvp.Value - DateTime.Now).TotalSeconds < 0 select kvp.Key).ToArray();
-			if (aRemoveExpiredItems)
+			DateTime now = DateTime.Now;
+			var expired = (from kvp in _queue where kvp.Value < now select kvp).ToArray();
+			if (!aRemoveExpiredItems)
 			{
-				RemoveExpiredItems();
+				return (from kvp in expired select kvp.Key).ToArray();
 			}
-			return keys;
+			// remove exactly the items that were read; one added again meanwhile keeps its new time
+			var items = (ICollection<KeyValuePair<T, DateTime>>) _queue;
+			return (from kvp in expired where items.Remove(kvp) select kvp.Key).ToArray();
 		}
 
 		public bool Contains(T aObj)
@@ -83,12 +79,7 @@ namespace XG.Plugin.Irc
 
 		public void RemoveExpiredItems()
 		{
-			DateTime date;
-			var keys = (from kvp in _queue where (kvp.Value - DateTime.Now).TotalSeconds < 0 select kvp.Key).ToArray();
-			foreach (var key in keys)
-			{
-				_queue.TryRemove(key, out date);
-			}
+			GetExpiredItems();
 		}
 	}
 }

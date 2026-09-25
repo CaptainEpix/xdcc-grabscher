@@ -125,6 +125,7 @@
     <Compile Include="Business\Helper\Filesystem.cs" />
     <Compile Include="Business\Helper\Process.cs" />
     <Compile Include="Plugin\Irc\Parser\AParser.cs" />
+    <Compile Include="Plugin\Irc\TimedList.cs" />
     <Compile Include="Plugin\Irc\Parser\Types\Info\Bandwitdh.cs" />
     <Compile Include="Plugin\Irc\Parser\Types\Info\Join.cs" />
     <Compile Include="Plugin\Irc\Parser\Types\Info\Packet.cs" />
