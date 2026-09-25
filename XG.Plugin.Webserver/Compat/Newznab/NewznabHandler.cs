@@ -108,7 +108,9 @@ namespace XG.Plugin.Webserver.Compat.Newznab
 
 		NewznabResponse Search(NewznabRequest aRequest, string aApiUrl, string aApiKey)
 		{
-			var result = Webserver.Search.Packets.GetResults(aRequest.Required, aRequest.Excluded, aRequest.Prefixes, aRequest.ShowOfflineBots, aRequest.Offset, aRequest.Limit, "LastMentioned", true);
+			// bots announce their packets over and over, so the recent feed goes by when a packet started to offer its file
+			string sort = aRequest.IsRecent ? "LastUpdated" : "LastMentioned";
+			var result = Webserver.Search.Packets.GetResults(aRequest.Required, aRequest.Excluded, aRequest.Prefixes, aRequest.ShowOfflineBots, true, aRequest.Offset, aRequest.Limit, sort, true);
 
 			var items = new List<NewznabItem>();
 			foreach (var packet in result.Packets)
@@ -214,14 +216,15 @@ namespace XG.Plugin.Webserver.Compat.Newznab
 		/// </summary>
 		public static DateTime PublishDate(Packet aPacket)
 		{
+			// when the packet started to offer its file; announcements repeat, so they would make old packets look new
 			var minimum = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-			if (aPacket.LastMentioned > minimum)
-			{
-				return aPacket.LastMentioned;
-			}
 			if (aPacket.LastUpdated > minimum)
 			{
 				return aPacket.LastUpdated;
+			}
+			if (aPacket.LastMentioned > minimum)
+			{
+				return aPacket.LastMentioned;
 			}
 			return DateTime.UtcNow;
 		}

@@ -132,6 +132,11 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 				{
 					// port 0 asks the client to listen instead (passive/reverse DCC), which XG does not support
 					Log.Error("Parse() " + tBot + " submitted wrong port: " + tPort + (tPort == 0 ? " (passive DCC is not supported)" : "") + ", disabling packet");
+					if (tPort == 0)
+					{
+						tBot.PassiveDccTime = DateTime.Now;
+						tBot.Commit();
+					}
 					tPacket.Enabled = false;
 					tPacket.Commit();
 

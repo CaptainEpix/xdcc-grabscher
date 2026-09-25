@@ -121,7 +121,7 @@ namespace XG.Plugin.Webserver.Search
 		static void ObjectChanged(object aSender, EventArgs<AObject, string[]> aEventArgs)
 		{
 			var bot = aEventArgs.Value1 as Bot;
-			if (bot != null && aEventArgs.Value2.Contains("Connected"))
+			if (bot != null && (aEventArgs.Value2.Contains("Connected") || aEventArgs.Value2.Contains("PassiveDccTime")))
 			{
 				foreach (var pack in bot.Packets)
 				{
@@ -257,8 +257,9 @@ namespace XG.Plugin.Webserver.Search
 		/// <summary>
 		/// Searches with already analyzed tokens. Every required and prefix token must match,
 		/// no excluded token may match. Without any required or prefix token all packets match.
+		/// Packets of bots which only offer passive DCC transfers can be left out, XG can not download them.
 		/// </summary>
-		public static Result GetResults(IEnumerable<string> aRequired, IEnumerable<string> aExcluded, IEnumerable<string> aPrefixes, bool aShowOfflineBots, int aStart, int aLimit, string aSort, bool aReverse)
+		public static Result GetResults(IEnumerable<string> aRequired, IEnumerable<string> aExcluded, IEnumerable<string> aPrefixes, bool aShowOfflineBots, bool aHidePassiveBots, int aStart, int aLimit, string aSort, bool aReverse)
 		{
 			var query = new BooleanQuery();
 			bool positive = false;
@@ -283,6 +284,10 @@ namespace XG.Plugin.Webserver.Search
 			if (!aShowOfflineBots)
 			{
 				query.Add(new TermQuery(new Term("Online", "1")), Occur.MUST);
+			}
+			if (aHidePassiveBots)
+			{
+				query.Add(new TermQuery(new Term("PassiveOnly", "1")), Occur.MUST_NOT);
 			}
 
 			using (var reader = _writer.GetReader())
@@ -482,6 +487,7 @@ namespace XG.Plugin.Webserver.Search
 				case "Speed":
 				case "TimeMissing":
 				case "LastMentioned":
+				case "LastUpdated":
 					return new Sort(new SortField(aSort, SortField.LONG, aReverse));
 
 				default:
@@ -551,7 +557,9 @@ namespace XG.Plugin.Webserver.Search
 			doc.Add(new Field("Speed", "" + (aPacket.File != null ? aPacket.File.Speed : 0), Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("TimeMissing", "" + (aPacket.File != null ? aPacket.File.TimeMissing : 0), Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("LastMentioned", "" + aPacket.LastMentioned.ToTimestamp(), Field.Store.YES, Field.Index.NOT_ANALYZED));
+			doc.Add(new Field("LastUpdated", "" + aPacket.LastUpdated.ToTimestamp(), Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("Online", aPacket.Parent.Connected ? "1" : "0", Field.Store.YES, Field.Index.NOT_ANALYZED));
+			doc.Add(new Field("PassiveOnly", aPacket.Parent.OffersPassiveDccOnly ? "1" : "0", Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("Enabled", aPacket.Enabled ? "1" : "0", Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("Connected", aPacket.Connected ? "1" : "0", Field.Store.YES, Field.Index.NOT_ANALYZED));
 			return doc;
