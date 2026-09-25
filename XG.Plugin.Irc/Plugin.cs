@@ -239,10 +239,14 @@ namespace XG.Plugin.Irc
 
 		void BotConnect(object aSender, EventArgs<Packet, Int64, IPAddress, int> aEventArgs)
 		{
+			// the listening port of a passive offer, reserved by the parser
+			var passive = PassiveDcc.Claim(aEventArgs.Value1.Guid);
+
 			int currentDownloadCount = (from file in Files.All where file.Connected select file).Count();
 			if (Settings.Default.MaxDownloads > 0 && currentDownloadCount >= Settings.Default.MaxDownloads)
 			{
 				_log.Error("BotConnect(" + aEventArgs.Value1 + ") skipping, because already " + Settings.Default.MaxDownloads + " packets are downloading");
+				PassiveDcc.Release(passive);
 
 				IrcConnection connection = _connections.SingleOrDefault(c => c.Server == aEventArgs.Value1.Parent.Parent.Parent);
 				if (connection != null)
@@ -262,6 +266,7 @@ namespace XG.Plugin.Irc
 					StartSize = aEventArgs.Value2,
 					IP = aEventArgs.Value3,
 					Port = aEventArgs.Value4,
+					Passive = passive,
 					MaxData = aEventArgs.Value1.RealSize - aEventArgs.Value2,
 					Scheduler = Scheduler
 				};
@@ -276,6 +281,7 @@ namespace XG.Plugin.Irc
 			{
 				// uhh - that should not happen
 				_log.Error("BotConnect(" + aEventArgs.Value1 + ") is already downloading");
+				PassiveDcc.Release(passive);
 			}
 		}
 

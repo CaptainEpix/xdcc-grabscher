@@ -28,6 +28,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Threading;
 using XG.Business.Helper;
 using XG.Config.Properties;
 using XG.Extensions;
@@ -71,6 +72,11 @@ namespace XG.Plugin.Irc
 		public bool ConnectFailed { get; private set; }
 		public IPAddress IP { get; set; }
 		public int Port { get; set; }
+
+		/// <summary>
+		/// The listening port of a passive transfer, where the bot connects to XG; null if XG connects to the bot.
+		/// </summary>
+		public PassiveDcc.Reservation Passive { get; set; }
 		public Int64 MaxData { get; set; }
 
 		TcpClient _tcpClient;
@@ -113,14 +119,22 @@ namespace XG.Plugin.Irc
 			Packet.Parent.QueueTime = 0;
 			Packet.Parent.Commit();
 
-			using (_tcpClient = new TcpClient())
+			using (_tcpClient = Passive != null ? AcceptFromBot() : new TcpClient())
 			{
-				_tcpClient.SendTimeout = Settings.Default.DownloadTimeoutTime * 1000;
-				_tcpClient.ReceiveTimeout = Settings.Default.DownloadTimeoutTime * 1000;
-
 				try
 				{
-					_tcpClient.Connect(IP, Port);
+					if (_tcpClient == null)
+					{
+						// the bot never connected to the passive port
+						return;
+					}
+					_tcpClient.SendTimeout = Settings.Default.DownloadTimeoutTime * 1000;
+					_tcpClient.ReceiveTimeout = Settings.Default.DownloadTimeoutTime * 1000;
+
+					if (Passive == null)
+					{
+						_tcpClient.Connect(IP, Port);
+					}
 					_log.Info("StartRun() connected");
 
 					using (Stream stream = new ThrottledStream(_tcpClient.GetStream(), Settings.Default.MaxDownloadSpeedInKB * 1000))
@@ -172,12 +186,51 @@ namespace XG.Plugin.Irc
 				finally
 				{
 					_log.Info("StartRun() finishing");
+					PassiveDcc.Release(Passive);
 					FinishWriting();
 
 					_tcpClient = null;
 					_writer = null;
 				}
 			}
+		}
+
+		/// <summary>
+		/// Waits for the bot to connect to the passive port. Connections from other addresses are
+		/// refused when the bot told its address. Returns null if the bot did not connect in time.
+		/// </summary>
+		TcpClient AcceptFromBot()
+		{
+			var listener = Passive.Listener;
+			bool checkAddress = IP != null && !IP.Equals(IPAddress.Any) && !IP.Equals(IPAddress.None);
+			DateTime until = DateTime.Now.AddSeconds(PassiveDcc.AcceptTimeoutSeconds);
+			try
+			{
+				while (AllowRunning && !Passive.Stopped && DateTime.Now < until)
+				{
+					if (!listener.Pending())
+					{
+						Thread.Sleep(100);
+						continue;
+					}
+					var client = listener.AcceptTcpClient();
+					var remote = ((IPEndPoint) client.Client.RemoteEndPoint).Address;
+					if (checkAddress && !remote.Equals(IP) && !(remote.IsIPv4MappedToIPv6 && remote.MapToIPv4().Equals(IP)))
+					{
+						_log.Warn("AcceptFromBot() refusing a connection from " + remote + ", waiting for " + IP);
+						client.Close();
+						continue;
+					}
+					_log.Info("AcceptFromBot() " + remote + " connected to port " + Passive.ListenPort);
+					return client;
+				}
+			}
+			catch (Exception ex)
+			{
+				_log.Error("AcceptFromBot() port " + Passive.ListenPort, ex);
+			}
+			_log.Error("AcceptFromBot() the bot did not connect to port " + Passive.ListenPort + " (is the port forwarded to XG?)");
+			return null;
 		}
 
 		protected override void StopRun()

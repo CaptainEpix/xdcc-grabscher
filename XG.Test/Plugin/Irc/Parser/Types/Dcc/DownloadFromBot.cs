@@ -72,6 +72,10 @@ namespace XG.Test.Plugin.Irc.Parser.Types.Dcc
 			_addedPackets.Clear();
 			Packet.Enabled = true;
 			Packet.Connected = false;
+			Bot.PassiveDccTime = DateTime.MinValue;
+			var reservation = XG.Business.Helper.PassiveDcc.Claim(Packet.Guid);
+			XG.Business.Helper.PassiveDcc.Release(reservation);
+			XG.Business.Helper.PassiveDcc.Configure(null, null, null, null);
 		}
 
 		[Test]
@@ -138,6 +142,88 @@ namespace XG.Test.Plugin.Irc.Parser.Types.Dcc
 			Assert.AreEqual(Notification.Types.BotSubmittedWrongData, notification.Type);
 			// the message template names the packet and its bot
 			Assert.AreSame(Packet, notification.Object1);
+		}
+
+		[Test]
+		public void PassiveDccOfferAnsweredTest()
+		{
+			int port = XG.Test.Business.Helper.PassiveDccTest.FreePort();
+			XG.Business.Helper.PassiveDcc.Configure("" + port, null, "203.0.113.7", null);
+			var parser = new XG.Plugin.Irc.Parser.Types.Dcc.DownloadFromBot();
+			EventArgs<Packet, Int64, IPAddress, int> raisedEvent = null;
+			string sentMessage = null;
+			parser.OnAddDownload += (sender, e) => raisedEvent = e;
+			parser.OnSendMessage += (sender, e) => sentMessage = e.Value4;
+
+			Parse(parser, "\u0001DCC SEND Testfile.with.a.long.name.mkv 1203194610 0 975304559 1234\u0001");
+
+			Assert.IsNotNull(raisedEvent, "a passive offer starts a download on the reserved port");
+			Assert.AreSame(Packet, raisedEvent.Value1);
+			Assert.AreEqual(0, raisedEvent.Value2);
+			Assert.AreEqual(port, raisedEvent.Value4);
+			Assert.AreEqual("DCC SEND Testfile.with.a.long.name.mkv 3405803783 " + port + " 975304559 1234", sentMessage);
+			Assert.IsTrue(Packet.Enabled);
+			Assert.IsTrue(Bot.OffersPassiveDccOnly);
+		}
+
+		[Test]
+		public void PassiveDccResumeTest()
+		{
+			int port = XG.Test.Business.Helper.PassiveDccTest.FreePort();
+			XG.Business.Helper.PassiveDcc.Configure("" + port, null, "203.0.113.7", null);
+			var part = new XG.Model.Domain.File(Packet.RealName, Packet.RealSize);
+			part.CurrentSize = 2000000;
+			var files = new Files();
+			files.Add(part);
+			var oldFiles = XG.Business.Helper.FileActions.Files;
+			var oldTempPath = XG.Config.Properties.Settings.Default.TempPath;
+			XG.Config.Properties.Settings.Default.TempPath = System.IO.Path.GetTempPath();
+			string partPath = XG.Config.Properties.Settings.Default.TempPath + part.TmpName;
+			System.IO.File.WriteAllBytes(partPath, new byte[0]);
+			try
+			{
+				XG.Business.Helper.FileActions.Files = files;
+				var parser = new XG.Plugin.Irc.Parser.Types.Dcc.DownloadFromBot();
+				EventArgs<Packet, Int64, IPAddress, int> raisedEvent = null;
+				string sentMessage = null;
+				parser.OnAddDownload += (sender, e) => raisedEvent = e;
+				parser.OnSendMessage += (sender, e) => sentMessage = e.Value4;
+				long position = 2000000 - XG.Config.Properties.Settings.Default.FileRollbackBytes;
+
+				Parse(parser, "\u0001DCC SEND Testfile.with.a.long.name.mkv 1203194610 0 975304559 1234\u0001");
+				Assert.IsNull(raisedEvent, "the part is resumed first");
+				Assert.AreEqual("DCC RESUME Testfile.with.a.long.name.mkv 0 " + position + " 1234", sentMessage);
+
+				Parse(parser, "\u0001DCC ACCEPT Testfile.with.a.long.name.mkv 0 " + position + " 1234\u0001");
+				Assert.IsNotNull(raisedEvent);
+				Assert.AreEqual(position, raisedEvent.Value2);
+				Assert.AreEqual(port, raisedEvent.Value4);
+				Assert.AreEqual("DCC SEND Testfile.with.a.long.name.mkv 3405803783 " + port + " 975304559 1234", sentMessage);
+			}
+			finally
+			{
+				XG.Business.Helper.FileActions.Files = oldFiles;
+				XG.Config.Properties.Settings.Default.TempPath = oldTempPath;
+				System.IO.File.Delete(partPath);
+			}
+		}
+
+		[Test]
+		public void PassiveDccQuotedNameTest()
+		{
+			int port = XG.Test.Business.Helper.PassiveDccTest.FreePort();
+			XG.Business.Helper.PassiveDcc.Configure("" + port, null, "203.0.113.7", null);
+			var other = AddPacket(2, "Other File With Spaces.mkv", true);
+			Packet.Enabled = false;
+			var parser = new XG.Plugin.Irc.Parser.Types.Dcc.DownloadFromBot();
+			string sentMessage = null;
+			parser.OnSendMessage += (sender, e) => sentMessage = e.Value4;
+
+			Parse(parser, "\u0001DCC SEND \"Other File With Spaces.mkv\" 1203194610 0 100 77\u0001");
+
+			// the bot gets its own file name back, quoted
+			Assert.AreEqual("DCC SEND \"Other File With Spaces.mkv\" 3405803783 " + port + " 100 77", sentMessage);
+			XG.Business.Helper.PassiveDcc.Release(XG.Business.Helper.PassiveDcc.Claim(other.Guid));
 		}
 
 		[Test]

@@ -78,6 +78,9 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 			}
 
 			bool isOk = false;
+			// passive (reverse) DCC: the bot sends port 0 and a token and connects to XG instead
+			bool passive = false;
+			string token = null;
 
 			int tPort = 0;
 			File tFile = FileActions.TryGetFile(tPacket.RealName, tPacket.RealSize);
@@ -93,19 +96,16 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 			}
 
 			string[] tDataList = text.Split(' ');
+			// if the name of the file contains spaces, we have to replace em
+			Match tQuoted = QuotedOffer.Match(text);
+			if (tQuoted.Success)
+			{
+				tDataList = (tQuoted.Groups["command"] + " " + tQuoted.Groups["packet_name"].ToString().Replace(" ", "_").Replace("'", "") + tQuoted.Groups["bot_data"]).Split(' ');
+			}
+
 			if (tDataList[0] == "SEND")
 			{
 				Log.Info("Parse() DCC from " + tBot);
-
-				// if the name of the file contains spaces, we have to replace em
-				if (text.StartsWith("SEND \"", StringComparison.CurrentCulture))
-				{
-					Match tMatch = Regex.Match(text, "SEND \"(?<packet_name>.+)\"(?<bot_data>[^\"]+)$");
-					if (tMatch.Success)
-					{
-						tDataList = ("SEND " + tMatch.Groups ["packet_name"].ToString().Replace(" ", "_").Replace("'", "") + tMatch.Groups ["bot_data"]).Split(' ');
-					}
-				}
 
 				try
 				{
@@ -127,16 +127,23 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 					return false;
 				}
 
-				// we cant connect to port <= 0
-				if (tPort <= 0)
+				if (tPort == 0)
 				{
-					// port 0 asks the client to listen instead (passive/reverse DCC), which XG does not support
-					Log.Error("Parse() " + tBot + " submitted wrong port: " + tPort + (tPort == 0 ? " (passive DCC is not supported)" : "") + ", disabling packet");
-					if (tPort == 0)
+					// port 0 asks the client to listen instead
+					tBot.PassiveDccTime = DateTime.Now;
+					tBot.Commit();
+					if (PassiveDcc.Enabled && tDataList.Length > 5)
 					{
-						tBot.PassiveDccTime = DateTime.Now;
-						tBot.Commit();
+						passive = true;
+						token = tDataList[5];
+						Log.Info("Parse() " + tBot + " offers a passive DCC transfer");
 					}
+				}
+
+				// we cant connect to port <= 0
+				if (tPort < 0 || (tPort == 0 && !passive))
+				{
+					Log.Error("Parse() " + tBot + " submitted wrong port: " + tPort + (tPort == 0 ? " (passive DCC is not configured, see XG_PASSIVE_DCC_PORTS)" : "") + ", disabling packet");
 					tPacket.Enabled = false;
 					tPacket.Commit();
 
@@ -187,7 +194,10 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 					else if (tFile.CurrentSize > 0)
 					{
 						Log.Info("Parse() try resume from " + tBot + " for " + tPacket + " @ " + startSize);
-						FireSendMessage(this, new EventArgs<Server, SendType, string, string>(aMessage.Channel.Parent, SendType.CtcpRequest, tBot.Name, "DCC RESUME " + tPacket.RealName + " " + tPort + " " + startSize));
+						string resume = passive
+							? "DCC RESUME " + DccName(offeredName ?? tPacket.RealName) + " 0 " + startSize + " " + token
+							: "DCC RESUME " + tPacket.RealName + " " + tPort + " " + startSize;
+						FireSendMessage(this, new EventArgs<Server, SendType, string, string>(aMessage.Channel.Parent, SendType.CtcpRequest, tBot.Name, resume));
 					}
 					else
 					{
@@ -223,17 +233,74 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 					return false;
 				}
 
+				if (tPort == 0)
+				{
+					// the resume of a passive offer, the bot connects once XG sent its address
+					if (!PassiveDcc.Enabled || tDataList.Length < 5)
+					{
+						Log.Error("Parse() " + tBot + " accepted a passive resume, but passive DCC is not configured");
+						return false;
+					}
+					passive = true;
+					token = tDataList[4];
+				}
+
 				isOk = true;
 			}
 
 			tPacket.Commit();
-			if (isOk)
+			if (isOk && passive)
+			{
+				StartPassive(aMessage, tBot, tPacket, startSize, offeredName ?? tPacket.RealName, token);
+			}
+			else if (isOk)
 			{
 				Log.Info("Parse() downloading from " + tBot + " - Starting: " + startSize + " - Size: " + tPacket.RealSize);
 				FireAddDownload(this, new EventArgs<Packet, long, IPAddress, int>(tPacket, startSize, tBot.IP, tPort));
 			}
 			return true;
 		}
+
+		/// <summary>
+		/// Listens on a free passive DCC port and tells the bot where to connect to.
+		/// </summary>
+		void StartPassive(Message aMessage, Bot aBot, Packet aPacket, Int64 aStartSize, string aName, string aToken)
+		{
+			var address = PassiveDcc.PublicAddress;
+			if (address == null)
+			{
+				Log.Error("Parse() can not answer the passive offer of " + aBot + ", the public address is unknown (set XG_PASSIVE_DCC_IP)");
+				aPacket.Enabled = false;
+				aPacket.Commit();
+				FireNotificationAdded(Notification.Types.BotSubmittedWrongData, aPacket);
+				return;
+			}
+
+			var reservation = PassiveDcc.Reserve(aPacket.Guid);
+			if (reservation == null)
+			{
+				// all passive ports are busy, ask again later; the bot re-sends its pending offer then
+				FireQueueRequestFromBot(this, new EventArgs<Bot, int>(aBot, Settings.Default.CommandWaitTime));
+				return;
+			}
+
+			Log.Info("Parse() downloading passive from " + aBot + " - Starting: " + aStartSize + " - Size: " + aPacket.RealSize + " - Port: " + reservation.ListenPort);
+			FireAddDownload(this, new EventArgs<Packet, long, IPAddress, int>(aPacket, aStartSize, aBot.IP, reservation.ListenPort));
+			if (reservation.Stopped)
+			{
+				// the download was not started, e.g. because of the download limit
+				return;
+			}
+			FireSendMessage(this, new EventArgs<Server, SendType, string, string>(aMessage.Channel.Parent, SendType.CtcpRequest, aBot.Name,
+				"DCC SEND " + DccName(aName) + " " + PassiveDcc.ToDccAddress(address) + " " + reservation.PublicPort + " " + aPacket.RealSize + " " + aToken));
+		}
+
+		static string DccName(string aName)
+		{
+			return aName.Contains(" ") ? "\"" + aName + "\"" : aName;
+		}
+
+		static readonly Regex QuotedOffer = new Regex("^(?<command>SEND|ACCEPT) \"(?<packet_name>.+)\"(?<bot_data>[^\"]+)$");
 
 		static Int64 ResumePosition(File aFile)
 		{
@@ -245,9 +312,9 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 		/// </summary>
 		static string OfferedFileName(string aText)
 		{
-			if (aText.StartsWith("SEND \"", StringComparison.Ordinal))
+			if (aText.StartsWith("SEND \"", StringComparison.Ordinal) || aText.StartsWith("ACCEPT \"", StringComparison.Ordinal))
 			{
-				Match tMatch = Regex.Match(aText, "SEND \"(?<packet_name>.+)\"(?<bot_data>[^\"]+)$");
+				Match tMatch = QuotedOffer.Match(aText);
 				return tMatch.Success ? tMatch.Groups["packet_name"].ToString() : null;
 			}
 			string[] tDataList = aText.Split(' ');
