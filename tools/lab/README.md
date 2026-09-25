@@ -43,5 +43,5 @@ Files:
 - `kernel32shim.c` – lets the NuGet db4o build run on Linux Mono
 - `build.sh`, `run.sh`, `stop.sh`, `check.sh`
 
-On the very first start XG may crash while creating `xgsnapshots.db`
+Builds before the first-start fix may crash once while creating `xgsnapshots.db`;
 (an existing issue in the RRD code); starting it again works.

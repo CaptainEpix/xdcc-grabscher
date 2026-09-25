@@ -340,7 +340,7 @@ if (!String.IsNullOrEmpty(commandForLog) &&
 						if (_latestPacketRequests.Contains(name))
 						{
 							double time = _latestPacketRequests.GetMissingSeconds(name);
-							_log.Warn("RequestFromBot(" + aBot + ") packet name " + tPacket.Name + " is blocked for " + time + "ms");
+							_log.Warn("RequestFromBot(" + aBot + ") packet name " + tPacket.Name + " is blocked for " + time + "s");
 							AddBotToQueue(aBot, (int) time + 1);
 							return;
 						}

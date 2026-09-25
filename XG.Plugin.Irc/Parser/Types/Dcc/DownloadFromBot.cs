@@ -133,11 +133,12 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 				// we cant connect to port <= 0
 				if (tPort <= 0)
 				{
-					Log.Error("Parse() " + tBot + " submitted wrong port: " + tPort + ", disabling packet");
+					// port 0 asks the client to listen instead (passive/reverse DCC), which XG does not support
+					Log.Error("Parse() " + tBot + " submitted wrong port: " + tPort + (tPort == 0 ? " (passive DCC is not supported)" : "") + ", disabling packet");
 					tPacket.Enabled = false;
 					tPacket.Commit();
 
-					FireNotificationAdded(Notification.Types.BotSubmittedWrongData, tBot);
+					FireNotificationAdded(Notification.Types.BotSubmittedWrongData, tPacket);
 					return false;
 				}
 
@@ -164,7 +165,7 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 					tPacket.Enabled = false;
 					tPacket.Commit();
 
-					FireNotificationAdded(Notification.Types.BotSubmittedWrongData, tBot);
+					FireNotificationAdded(Notification.Types.BotSubmittedWrongData, tPacket);
 					return false;
 				}
 

@@ -122,6 +122,25 @@ namespace XG.Test.Plugin.Irc.Parser.Types.Dcc
 		}
 
 		[Test]
+		public void PassiveDccOfferTest()
+		{
+			// port 0 asks XG to listen (reverse DCC), which it does not support
+			var parser = new XG.Plugin.Irc.Parser.Types.Dcc.DownloadFromBot();
+			EventArgs<Packet, Int64, IPAddress, int> raisedEvent = null;
+			Notification notification = null;
+			parser.OnAddDownload += (sender, e) => raisedEvent = e;
+			parser.OnNotificationAdded += (sender, e) => notification = e.Value1;
+
+			Parse(parser, "\u0001DCC SEND Testfile.with.a.long.name.mkv 1203194610 0 975304559 1234\u0001");
+
+			Assert.IsNull(raisedEvent);
+			Assert.IsFalse(Packet.Enabled);
+			Assert.AreEqual(Notification.Types.BotSubmittedWrongData, notification.Type);
+			// the message template names the packet and its bot
+			Assert.AreSame(Packet, notification.Object1);
+		}
+
+		[Test]
 		public void UnknownOfferNameUsesOldestPacketTest()
 		{
 			// some bots send a different file name than they list; keep the old behaviour then
