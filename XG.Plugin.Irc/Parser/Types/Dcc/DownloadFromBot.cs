@@ -89,10 +89,7 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 				{
 					return false;
 				}
-				if (tFile.CurrentSize > Settings.Default.FileRollbackBytes)
-				{
-					startSize = tFile.CurrentSize - Settings.Default.FileRollbackBytes;
-				}
+				startSize = ResumePosition(tFile);
 			}
 
 			string[] tDataList = text.Split(' ');
@@ -169,6 +166,11 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 					return false;
 				}
 
+				// look again with the real name and size, a packet offered for the first time has neither,
+				// but a part of the same file may already be there from another bot
+				tFile = FileActions.TryGetFile(tPacket.RealName, tPacket.RealSize);
+				startSize = tFile != null ? ResumePosition(tFile) : 0;
+
 				if (tFile != null)
 				{
 					if (tFile.Connected)
@@ -226,6 +228,11 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 				FireAddDownload(this, new EventArgs<Packet, long, IPAddress, int>(tPacket, startSize, tBot.IP, tPort));
 			}
 			return true;
+		}
+
+		static Int64 ResumePosition(File aFile)
+		{
+			return aFile.CurrentSize > Settings.Default.FileRollbackBytes ? aFile.CurrentSize - Settings.Default.FileRollbackBytes : 0;
 		}
 
 		/// <summary>

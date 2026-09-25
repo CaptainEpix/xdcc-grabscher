@@ -141,6 +141,44 @@ namespace XG.Test.Plugin.Irc.Parser.Types.Dcc
 		}
 
 		[Test]
+		public void FirstOfferResumesPartFromAnotherBotTest()
+		{
+			// a part of the file is there from another bot; this packet was never offered, so it has no real name yet
+			var packet = AddPacket(2, "Other.File.S01E02.mkv", true);
+			Packet.Enabled = false;
+			var part = new XG.Model.Domain.File("Other.File.S01E02.mkv", 5000000);
+			part.CurrentSize = 2000000;
+			var files = new Files();
+			files.Add(part);
+			var oldFiles = XG.Business.Helper.FileActions.Files;
+			var oldTempPath = XG.Config.Properties.Settings.Default.TempPath;
+			XG.Config.Properties.Settings.Default.TempPath = System.IO.Path.GetTempPath();
+			string partPath = XG.Config.Properties.Settings.Default.TempPath + part.TmpName;
+			System.IO.File.WriteAllBytes(partPath, new byte[0]);
+			try
+			{
+				XG.Business.Helper.FileActions.Files = files;
+				var parser = new XG.Plugin.Irc.Parser.Types.Dcc.DownloadFromBot();
+				EventArgs<Packet, Int64, IPAddress, int> raisedEvent = null;
+				string sentMessage = null;
+				parser.OnAddDownload += (sender, e) => raisedEvent = e;
+				parser.OnSendMessage += (sender, e) => sentMessage = e.Value4;
+
+				Parse(parser, "\u0001DCC SEND Other.File.S01E02.mkv 1203194610 45004 5000000\u0001");
+
+				Assert.IsNull(raisedEvent, "the download must not start from the beginning");
+				Assert.AreEqual("DCC RESUME Other.File.S01E02.mkv 45004 " + (2000000 - XG.Config.Properties.Settings.Default.FileRollbackBytes), sentMessage);
+				Assert.AreEqual("Other.File.S01E02.mkv", packet.RealName);
+			}
+			finally
+			{
+				XG.Business.Helper.FileActions.Files = oldFiles;
+				XG.Config.Properties.Settings.Default.TempPath = oldTempPath;
+				System.IO.File.Delete(partPath);
+			}
+		}
+
+		[Test]
 		public void UnknownOfferNameUsesOldestPacketTest()
 		{
 			// some bots send a different file name than they list; keep the old behaviour then

@@ -232,6 +232,19 @@ namespace XG.Plugin.Irc
 			{
 				var stream = new FileStream(Settings.Default.TempPath + File.TmpName, FileMode.OpenOrCreate, FileAccess.ReadWrite);
 
+				// resuming behind the end of the part would leave a gap of zeros in the file
+				if (StartSize > stream.Length)
+				{
+					_log.Error("InitializeWriting(" + Packet + ") cant resume at " + StartSize + ", the part has only " + stream.Length + " bytes");
+					File.CurrentSize = stream.Length;
+					stream.Close();
+					_tcpClient.Close();
+					return;
+				}
+				// everything from StartSize on is written again, so it must not be counted twice;
+				// otherwise the size reaches the end too early and a broken download is finished as complete
+				File.CurrentSize = StartSize;
+
 				// we are connected
 				if (OnConnected != null)
 				{

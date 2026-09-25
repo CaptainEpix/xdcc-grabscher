@@ -1,0 +1,13 @@
+{
+  "port": 16667,
+  "channel": "#lab",
+  "announce_every": 20,
+  "bots": [
+    { "nick": "LAB-CUT-A", "mode": "good", "ports": [44001], "cut_after": 2500000,
+      "packs": [ { "id": 1, "name": "Resume.Show.S01E01.720p.mkv", "size": 3145728 } ] },
+    { "nick": "LAB-CUT-B", "mode": "good", "ports": [44002], "cut_after": 700000, "cut_times": 1,
+      "packs": [ { "id": 1, "name": "Resume.Show.S01E01.720p.mkv", "size": 3145728 } ] },
+    { "nick": "LAB-CUT-C", "mode": "good", "ports": [44003], "cut_after": [300000, 2900000],
+      "packs": [ { "id": 1, "name": "Resume.Movie.2014.1080p.mkv", "size": 3145728 } ] }
+  ]
+}

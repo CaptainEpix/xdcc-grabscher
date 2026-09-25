@@ -15,9 +15,14 @@ Every bot has a DCC behaviour, so failures seen with real bots can be replayed:
   flaky      offers ports from a range; only some of them accept connections
              ("port_sequence" fixes the order of offered ports for repeatable runs)
 
-Any bot can set "ignore_cancel" to keep its pending offer despite XDCC CANCEL.
   passive    offers port 0, asking the client to listen (reverse DCC)
   late       starts listening only some time after sending the offer
+
+Any bot can set "ignore_cancel" to keep its pending offer despite XDCC CANCEL,
+and "cut_after" to close the first "cut_times" transfers (default: all) after
+that many bytes, like a bot that drops connections ("cut_after" can also be a
+list with the length of each transfer). Bots answer DCC RESUME with
+DCC ACCEPT and then send from the requested position.
 
 Usage: fakeirc.py lab.json
 All events are written as JSON lines to stdout so tests can assert on them.
@@ -61,6 +66,7 @@ class Offer:
         self.port = port
         self.created = created
         self.server = None
+        self.start = 0
 
 
 class Bot:
@@ -78,6 +84,8 @@ class Bot:
         self.rng = random.Random(config.get("seed", self.nick))
         self.port_sequence = list(config.get("port_sequence", []))
         self.ignore_cancel = config.get("ignore_cancel", False)
+        self.cut_after = config.get("cut_after", 0)
+        self.cut_times = config.get("cut_times", 1 << 30)
 
     def announce_lines(self):
         lines = ["** %d packs **  1 of 1 slot open" % len(self.packs)]
@@ -98,6 +106,16 @@ class Bot:
             if offer:
                 self.close_offer(offer)
             await user.notice(self.nick, "** Cancelled pending DCC offer" if offer else "** You don't appear to be in a queue")
+
+    async def on_resume(self, user, words):
+        # DCC RESUME <file> <port> <position>
+        offer = self.offers.get(user.nick)
+        if not offer or len(words) < 5 or int(words[3]) != offer.port:
+            log("bot_resume_rejected", bot=self.nick, request=" ".join(words))
+            return
+        offer.start = int(words[4])
+        log("bot_resume", bot=self.nick, pack=offer.pack["id"], port=offer.port, start=offer.start)
+        await user.privmsg(self.nick, "\x01DCC ACCEPT %s %d %d\x01" % (words[2], offer.port, offer.start))
 
     async def on_send(self, user, pack_id):
         try:
@@ -150,14 +168,19 @@ class Bot:
 
         async def handle(reader, writer):
             log("bot_connected", bot=self.nick, port=offer.port, pack=offer.pack["id"])
-            data = file_bytes(offer.pack["name"], offer.pack["size"])
+            data = file_bytes(offer.pack["name"], offer.pack["size"])[offer.start:]
+            cut = self.cut_after.pop(0) if isinstance(self.cut_after, list) and self.cut_after else self.cut_after
+            if isinstance(cut, int) and cut and self.cut_times > 0:
+                self.cut_times -= 1
+                data = data[:cut]
+                log("bot_cutting", bot=self.nick, pack=offer.pack["id"], start=offer.start, bytes=len(data))
             try:
                 for i in range(0, len(data), 65536):
                     writer.write(data[i:i + 65536])
                     await writer.drain()
                     if self.speed:
                         await asyncio.sleep(65536 / self.speed)
-                log("bot_sent", bot=self.nick, pack=offer.pack["id"], bytes=len(data))
+                log("bot_sent", bot=self.nick, pack=offer.pack["id"], start=offer.start, bytes=len(data))
                 await asyncio.sleep(1)
             except (ConnectionError, OSError) as ex:
                 log("bot_send_failed", bot=self.nick, pack=offer.pack["id"], error=str(ex))
@@ -258,6 +281,8 @@ class Network:
                 if text.startswith("\x01"):
                     if text.upper().startswith("\x01VERSION"):
                         await user.notice(bot.nick, "\x01VERSION iroffer-dinoex 3.33 [lab]\x01")
+                    elif text.upper().startswith("\x01DCC RESUME"):
+                        await bot.on_resume(user, text.strip("\x01").split())
                 else:
                     await bot.on_private(user, text)
         elif command in ("MODE", "WHO", "USERHOST", "ISON"):
