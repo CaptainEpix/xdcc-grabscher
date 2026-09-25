@@ -182,10 +182,13 @@ namespace XG.Plugin.Irc
 			Parser.Parse(message);
 
 			// check if the bot sends a message and hold back xdcc list requests one more time
-			var entry = _xdccListQueue.FirstOrDefault(x => x.User == e.Value2);
-			if (entry != null)
+			lock (_xdccListQueue)
 			{
-				entry.IncreaseTime();
+				var entry = _xdccListQueue.FirstOrDefault(x => x.User == e.Value2);
+				if (entry != null)
+				{
+					entry.IncreaseTime();
+				}
 			}
 		}
 
@@ -273,24 +276,28 @@ namespace XG.Plugin.Irc
 					return;
 				}
 
-				var entry = _xdccListQueue.FirstOrDefault(x => x.User == aEventArgs.Value2);
-				if (entry == null)
+				// the parser, the IRC events and the trigger job all use the queue
+				lock (_xdccListQueue)
 				{
-					_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") adding");
-					entry = new XdccListEntry(aEventArgs.Value2, aEventArgs.Value3);
-					_xdccListQueue.Add(entry);
-				}
-				else
-				{
-					entry.IncreaseTime();
-					if (entry.Commands.All(s => s != aEventArgs.Value3))
+					var entry = _xdccListQueue.FirstOrDefault(x => x.User == aEventArgs.Value2);
+					if (entry == null)
 					{
-						_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") enqueuing");
-						entry.Commands.Enqueue(aEventArgs.Value3);
+						_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") adding");
+						entry = new XdccListEntry(aEventArgs.Value2, aEventArgs.Value3);
+						_xdccListQueue.Add(entry);
 					}
 					else
 					{
-						_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") skipping");
+						entry.IncreaseTime();
+						if (entry.Commands.All(s => s != aEventArgs.Value3))
+						{
+							_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") enqueuing");
+							entry.Commands.Enqueue(aEventArgs.Value3);
+						}
+						else
+						{
+							_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") skipping");
+						}
 					}
 				}
 			}
@@ -376,7 +383,10 @@ if (!String.IsNullOrEmpty(commandForLog) &&
 		{
 			if (aChannel.AskForVersion && _client.IsUserMaybeeXdccBot(aChannel.Name, aUser))
 			{
-				_userToAskForVersion.Enqueue(aUser);
+				lock (_userToAskForVersion)
+				{
+					_userToAskForVersion.Enqueue(aUser);
+				}
 			}
 		}
 
@@ -519,32 +529,44 @@ if (!String.IsNullOrEmpty(commandForLog) &&
 				return;
 			}
 
-			var entriesReady = (from e in _xdccListQueue where (e.WaitUntil - DateTime.Now).TotalSeconds < 0 && e.Commands.Count > 0 select e).ToArray();
-			foreach (var entry in entriesReady)
+			// the parser and the IRC events add to the queue meanwhile
+			lock (_xdccListQueue)
 			{
-				string command = entry.Commands.Dequeue();
-				_log.Info("TriggerXdccListRun(" + entry.User + ", " + command + ")");
-				_client.SendMessage(entry.User, command);
-				_latestXdccListRequests.Add(entry.User + "@" + command, DateTime.Now.AddSeconds(Settings.Default.ChannelWaitTimeLong));
+				var entriesReady = (from e in _xdccListQueue where (e.WaitUntil - DateTime.Now).TotalSeconds < 0 && e.Commands.Count > 0 select e).ToArray();
+				foreach (var entry in entriesReady)
+				{
+					string command = entry.Commands.Dequeue();
+					_log.Info("TriggerXdccListRun(" + entry.User + ", " + command + ")");
+					_client.SendMessage(entry.User, command);
+					_latestXdccListRequests.Add(entry.User + "@" + command, DateTime.Now.AddSeconds(Settings.Default.ChannelWaitTimeLong));
 
-				if (entry.Commands.Count == 0)
-				{
-					_log.Info("TriggerXdccListRun(" + entry.User + ") removing entry");
-					_xdccListQueue.Remove(entry);
-				}
-				else
-				{
-					entry.IncreaseTime();
+					if (entry.Commands.Count == 0)
+					{
+						_log.Info("TriggerXdccListRun(" + entry.User + ") removing entry");
+						_xdccListQueue.Remove(entry);
+					}
+					else
+					{
+						entry.IncreaseTime();
+					}
 				}
 			}
 		}
 
 		void TriggerVersionRun()
 		{
-			if (_lastAskForVersionTime.AddSeconds(Settings.Default.CommandWaitTime) < DateTime.Now && _userToAskForVersion.Count > 0)
+			if (_lastAskForVersionTime.AddSeconds(Settings.Default.CommandWaitTime) < DateTime.Now)
 			{
+				string user;
+				lock (_userToAskForVersion)
+				{
+					if (_userToAskForVersion.Count == 0)
+					{
+						return;
+					}
+					user = _userToAskForVersion.Dequeue();
+				}
 				_lastAskForVersionTime = DateTime.Now;
-				string user = _userToAskForVersion.Dequeue();
 
 				_log.Info("AskForVersion(" + user + ")");
 				_client.Version(user);
