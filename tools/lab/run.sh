@@ -20,6 +20,11 @@ mkdir -p "$STATE/home"
 python3 -u "$LAB/fakeirc.py" "$SCENARIO" >"$STATE/irc.log" 2>&1 &
 echo $! >"$STATE/irc.pid"
 sleep 1
+if ! kill -0 "$(cat "$STATE/irc.pid")" 2>/dev/null; then
+	echo "fake IRC network did not start (port $IRC_PORT in use by an earlier run?):" >&2
+	cat "$STATE/irc.log" >&2
+	exit 1
+fi
 
 touch "$STATE/cmd"
 cd "$XG"

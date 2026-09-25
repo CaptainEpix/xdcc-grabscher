@@ -279,6 +279,23 @@ namespace XG.Test.Plugin.Webserver.Compat
 		}
 
 		[Test]
+		public void PacketAnnouncedAfterStartupTest()
+		{
+			// like the IRC parser for an existing bot: add the empty packet, then fill and commit it
+			var packet = new XG.Model.Domain.Packet { Id = 42 };
+			_data.OnlineBot.AddPacket(packet);
+			packet.LastMentioned = DateTime.UtcNow;
+			packet.Name = "Fresh.Announcement.S05E05.mkv";
+			packet.Size = 100;
+			packet.Commit();
+
+			// searches before and after must both see it
+			Search("t", "search", "q", "some");
+			CollectionAssert.AreEqual(new[] { packet.Name }, Titles(Search("t", "search", "q", "fresh announcement")));
+			CollectionAssert.AreEqual(new[] { packet.Name }, Titles(Search("t", "search", "q", "fresh announcement")));
+		}
+
+		[Test]
 		public void RemovedBotLeavesIndexTest()
 		{
 			var channel = _data.Servers.All.First().Channels.First();
