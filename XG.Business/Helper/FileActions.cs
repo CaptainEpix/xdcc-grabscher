@@ -196,7 +196,11 @@ namespace XG.Business.Helper
 				#endregion
 
 				string tmpPath = Settings.Default.TempPath + aFile.TmpName;
-				string readyPath = Settings.Default.ReadyPath + aFile.Name;
+				string readyPath = FileSystem.FreeFileName(Settings.Default.ReadyPath + aFile.Name);
+				if (readyPath != Settings.Default.ReadyPath + aFile.Name)
+				{
+					Log.Warn("FinishFile(" + aFile + ") " + aFile.Name + " already exists, saving as " + readyPath);
+				}
 
 				try
 				{
@@ -214,6 +218,8 @@ namespace XG.Business.Helper
 					{
 						Log.Fatal("FinishFile(" + aFile + ") cant move file");
 						FireFileFinished(aFile, matchedPackets.ToArray(), readyPath, false);
+
+						FireNotificationAdded(Notification.Types.FileFinishFailed, aFile);
 					}
 				}
 				catch (Exception ex)

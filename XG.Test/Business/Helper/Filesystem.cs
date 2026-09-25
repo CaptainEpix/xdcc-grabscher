@@ -53,5 +53,35 @@ namespace XG.Test.Business.Helper
 
 			File.Delete(fileNameNew);
 		}
+
+		[Test]
+		public void FreeFileNameTest()
+		{
+			string folder = Path.Combine(Path.GetTempPath(), "xg-free-name-test");
+			if (Directory.Exists(folder))
+			{
+				Directory.Delete(folder, true);
+			}
+			Directory.CreateDirectory(folder);
+			try
+			{
+				string path = Path.Combine(folder, "Show.S01E01.mkv");
+				Assert.AreEqual(path, FileSystem.FreeFileName(path));
+
+				File.Create(path).Close();
+				Assert.AreEqual(Path.Combine(folder, "Show.S01E01 (1).mkv"), FileSystem.FreeFileName(path));
+
+				File.Create(Path.Combine(folder, "Show.S01E01 (1).mkv")).Close();
+				Assert.AreEqual(Path.Combine(folder, "Show.S01E01 (2).mkv"), FileSystem.FreeFileName(path));
+
+				string noExtension = Path.Combine(folder, "pack");
+				Directory.CreateDirectory(noExtension);
+				Assert.AreEqual(Path.Combine(folder, "pack (1)"), FileSystem.FreeFileName(noExtension));
+			}
+			finally
+			{
+				Directory.Delete(folder, true);
+			}
+		}
 	}
 }
