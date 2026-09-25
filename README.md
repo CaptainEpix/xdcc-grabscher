@@ -94,6 +94,36 @@ Downloads are written by default to:
 
 Both should normally be backed by persistent Docker bind mounts or volumes.
 
+## Passive DCC
+
+Most bots open a port and XG connects to them. Some bots only offer **passive** (reverse) DCC: XG has to open a port, tell the bot its public address, and the bot connects to XG. This needs a few ports that are reachable from the internet.
+
+1. Pick a few ports, e.g. `50000-50004`. Each port carries one passive transfer at a time.
+2. **Forward them on your router** (TCP) to the machine running XG.
+3. **Publish them on the container** with the same numbers, e.g. `-p 50000-50004:50000-50004` (on unRAID add them as ports, or put that into *Extra Parameters*).
+4. **Tell XG** with environment variables:
+
+| Variable | Example | Meaning |
+| --- | --- | --- |
+| `XG_PASSIVE_DCC_PORTS` | `50000-50004` | Ports XG listens on. A `listen:public` pair like `50000:61234` advertises a different outside port, for routers or VPNs that forward another port to the container. Lists are separated by commas. |
+| `XG_PASSIVE_DCC_IP` | `203.0.113.7` | Your public IPv4 address. Optional: XG looks it up at startup (and every 30 minutes) at `api.ipify.org`, `checkip.amazonaws.com` or `icanhazip.com`. |
+| `XG_PASSIVE_DCC_PORTS_FILE` | `/gluetun/forwarded_port` | Optional file with the port(s) to use, read before every transfer. |
+| `XG_PASSIVE_DCC_IP_URL` | | Optional service returning the public address as plain text, instead of the defaults. |
+
+```bash
+docker run -d \
+  --name xdcc-grabscher \
+  -p 5556:5556 -p 50000-50004:50000-50004 \
+  -e XG_PASSIVE_DCC_PORTS=50000-50004 \
+  -v /path/to/config:/config \
+  -v /path/to/downloads:/config/.config/XG/dl \
+  xdcc-grabscher:3.3.2.0
+```
+
+**Behind a VPN** (e.g. XG sharing the network of a gluetun container): the ports have to be forwarded by the VPN provider, and not every provider offers that. Because XG looks up its address through its own connection, it finds the VPN's address by itself. If the provider forwards a fixed port, set it in `XG_PASSIVE_DCC_PORTS`; if the forwarded port changes on every connection, share gluetun's port file with XG and point `XG_PASSIVE_DCC_PORTS_FILE` at it.
+
+Only the address a bot announced may connect to a passive port; the port is closed again after the transfer or after 90 seconds without a connection. Without `XG_PASSIVE_DCC_PORTS`, passive offers are rejected as before, and bots which sent one are left out of the Prowlarr/Sonarr/Radarr search results for 7 days.
+
 ## Prowlarr / Sonarr / Radarr integration
 
 XG can act as an **indexer** for Prowlarr and as a **download client** for Sonarr, Radarr and Prowlarr. Nothing has to be patched or installed next to XG:
@@ -191,7 +221,7 @@ If you changed the download folder in the XG settings, XG reports that folder in
 - Text queries are matched against packet file names the same way the XG search does. Dots, dashes and underscores count as word separators, and `-word` excludes a word.
 - Sonarr episode searches become `S02E05`. Season searches match every packet whose name contains a token starting with `S02`. Daily shows are matched by their date.
 - XG does not know whether a packet is a movie or an episode. The category comes from the request: movie searches are returned as Movies, TV searches as TV, other searches in the requested category or as Other (8000).
-- The publish date is the last time a bot announced the packet.
+- The publish date is when the packet started to offer its file (when XG first saw it, or when the bot put a different file under that pack number). Bots announce their packets over and over, so the announcement time would make old packets look new. The feed without a search term (RSS) is sorted the same way.
 - Bots reuse pack numbers. If a packet offers a different file by the time it is grabbed, the grab is refused, so the wrong file is never downloaded.
 
 **Downloading**
@@ -201,6 +231,7 @@ If you changed the download folder in the XG settings, XG reports that folder in
 - When XG has moved the finished file into its download folder, the job moves to history as *completed*, including the file path, and the *Arr imports it.
 - Some bots only accept the file transfer on part of the ports they offer. If the transfer connection fails, XG cancels the bot's offer and asks again, up to 3 times, before giving up.
 - If XG stops the download (transfer connection failed 3 times, bot offline, request denied, pack no longer valid, or disabled by you in XG), the job is marked *failed* with the reason and the last bot message. The *Arr can then search for another release or retry.
+- A bot that does not answer at all fails the job after 15 minutes, so the *Arr can try another release. Bots that answer, for example with a queue position, are waited for as long as it takes. `XG_COMPAT_SILENT_BOT_SECONDS` changes the limit.
 - Removing a completed item from the *Arr history only forgets the job. The downloaded file is only deleted when the *Arr explicitly asks to remove the data, and only if it is still that job's file inside XG's download folder.
 - Jobs are stored in `/config/.config/XG/arr-jobs.json` and survive restarts.
 
@@ -209,7 +240,7 @@ If you changed the download folder in the XG settings, XG reports that folder in
 - Text search only; no IMDb/TVDB/TMDB id lookups, no anime absolute episode numbers, and names like `2x05` are not found by episode searches.
 - Removing a *downloading* item from the *Arr queue stops the XDCC transfer, and XG always deletes the partial file, even if the *Arr was asked to keep data.
 - XG has no pause or priorities. SABnzbd priorities are accepted but ignored.
-- Bots that only offer passive (reverse) DCC are not supported; XG reports them as having sent wrong data.
+- Bots that only offer passive (reverse) DCC need forwarded ports, see [Passive DCC](#passive-dcc).
 - All downloads land in XG's single download folder; categories do not get separate folders.
 - Grabbing a packet that is already being downloaded for an *Arr returns the existing job instead of a second one.
 - The reported SABnzbd version is a fixed compatibility value.
