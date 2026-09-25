@@ -1,0 +1,12 @@
+{
+  "port": 16667,
+  "channel": "#lab",
+  "announce_every": 20,
+  "bots": [
+    { "nick": "LAB-FLAKY", "mode": "flaky", "ports": [42001, 42002, 42003, 42004], "open_ports": [42003],
+      "port_sequence": [42001, 42003, 42002, 42003], "pending_timeout": 180,
+      "packs": [ { "id": 1, "name": "Flaky.Movie.2014.1080p.mkv", "size": 4194304 },
+                 { "id": 2, "name": "Flaky.Movie.2015.1080p.mkv", "size": 4194304 },
+                 { "id": 3, "name": "Flaky.Movie.2016.1080p.mkv", "size": 4194304 } ] }
+  ]
+}

@@ -257,6 +257,37 @@ namespace XG.Test.Plugin.Webserver.Compat
 		}
 
 		[Test]
+		public void BotAppearingAfterStartupTest()
+		{
+			// like the IRC parser: a new bot gets its first packet before it is attached to the channel
+			var bot = new XG.Model.Domain.Bot { Name = "[XG]Late", Connected = true };
+			var first = new XG.Model.Domain.Packet { Id = 1, Name = "", LastMentioned = DateTime.UtcNow };
+			bot.AddPacket(first);
+			_data.Servers.All.First().Channels.First().AddBot(bot);
+			first.Name = "Late.Arrival.S01E01.mkv";
+			first.Size = 100;
+			first.Commit();
+
+			var second = new XG.Model.Domain.Packet { Id = 2, Name = "Late.Arrival.S01E02.mkv", Size = 100, LastMentioned = DateTime.UtcNow };
+			bot.AddPacket(second);
+
+			CollectionAssert.AreEquivalent(new[] { first.Name, second.Name }, Titles(Search("t", "search", "q", "late arrival")));
+			Assert.AreSame(first, XG.Plugin.Webserver.Search.Packets.GetPacket(first.Guid));
+
+			var response = Handle("t", "get", "id", first.Guid.ToString(), "apikey", CompatTestData.ApiKey);
+			Assert.AreEqual(SyntheticNzb.ContentType, response.ContentType);
+		}
+
+		[Test]
+		public void RemovedBotLeavesIndexTest()
+		{
+			var channel = _data.Servers.All.First().Channels.First();
+			channel.RemoveBot(_data.OnlineBot);
+			Assert.IsNull(XG.Plugin.Webserver.Search.Packets.GetPacket(_data.Movie.Guid));
+			Assert.AreEqual(0, Titles(Search("t", "search", "q", "some movie", "offline", "1")).Count(t => t == _data.Movie.Name));
+		}
+
+		[Test]
 		public void GetChangedPacketTest()
 		{
 			string fingerprint = NewznabHandler.Fingerprint(_data.Episode205);

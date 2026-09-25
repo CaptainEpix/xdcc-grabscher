@@ -88,8 +88,8 @@ namespace XG.Plugin.Webserver.Search
 
 		static void ObjectAdded(object aSender, EventArgs<AObject, AObject> aEventArgs)
 		{
-			var packet = aEventArgs.Value2 as Packet;
-			if (packet != null)
+			// a new bot arrives with its first packets already attached, so index the whole subtree
+			foreach (var packet in PacketsOf(aEventArgs.Value2))
 			{
 				AddToIndex(packet);
 			}
@@ -97,11 +97,25 @@ namespace XG.Plugin.Webserver.Search
 
 		static void ObjectRemoved(object aSender, EventArgs<AObject, AObject> aEventArgs)
 		{
-			var packet = aEventArgs.Value2 as Packet;
-			if (packet != null)
+			foreach (var packet in PacketsOf(aEventArgs.Value2))
 			{
 				RemoveFromIndex(packet);
 			}
+		}
+
+		static IEnumerable<Packet> PacketsOf(AObject aObject)
+		{
+			var packet = aObject as Packet;
+			if (packet != null)
+			{
+				return new[] { packet };
+			}
+			var objects = aObject as AObjects;
+			if (objects != null)
+			{
+				return objects.Children.SelectMany(PacketsOf).ToArray();
+			}
+			return new Packet[0];
 		}
 
 		static void ObjectChanged(object aSender, EventArgs<AObject, string[]> aEventArgs)
@@ -481,21 +495,27 @@ namespace XG.Plugin.Webserver.Search
 
 		static void AddToIndex(Packet aPacket)
 		{
-			_writer.UpdateDocument(new Term("Guid", aPacket.Guid.ToString()), PacketToDocument(aPacket));
-			_packets.Add(aPacket.Guid.ToString(), aPacket);
-			_saveNeeded = true;
+			UpdateIndex(aPacket);
 		}
 
 		static void UpdateIndex(Packet aPacket)
 		{
 			_writer.UpdateDocument(new Term("Guid", aPacket.Guid.ToString()), PacketToDocument(aPacket));
+			// keep the lookup in sync with every indexed document, results are resolved through it
+			lock (_packets.SyncRoot)
+			{
+				_packets[aPacket.Guid.ToString()] = aPacket;
+			}
 			_saveNeeded = true;
 		}
 
 		static void RemoveFromIndex(Packet aPacket)
 		{
 			_writer.DeleteDocuments(new TermQuery(new Term("Guid", aPacket.Guid.ToString())));
-			_packets.Remove(aPacket.Guid.ToString());
+			lock (_packets.SyncRoot)
+			{
+				_packets.Remove(aPacket.Guid.ToString());
+			}
 			_saveNeeded = true;
 		}
 
