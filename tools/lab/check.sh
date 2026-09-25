@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # End-to-end check of a lab build through the Newznab and SABnzbd APIs, the way
-# Prowlarr/Sonarr/Radarr use them, against a good, a flaky and a refusing bot.
+# Prowlarr/Sonarr/Radarr use them, against a good, a flaky and a refusing bot,
+# and one that accepts the connection but sends nothing twice.
 #
 #   tools/lab/check.sh <xg build dir>
 #
-# Expected: good and flaky downloads complete, the refusing bot fails cleanly,
+# Expected: good, flaky and mute downloads complete, the refusing bot fails cleanly,
 # and grabbing the good release again completes quickly under a new name.
 set -euo pipefail
 XG="$1"
@@ -40,11 +41,12 @@ grab() {
 grab "good%20show" tv
 grab "flaky%20movie" movies
 grab "refuse%20show" tv
+grab "mute%20show" tv
 
 for i in $(seq 1 40); do
 	sleep 3
 	history=$(curl -sS "$U/sabnzbd/api?mode=history&apikey=$K")
-	[[ $(grep -o '"status":"\(Completed\|Failed\)"' <<<"$history" | wc -l) -ge 3 ]] && break
+	[[ $(grep -o '"status":"\(Completed\|Failed\)"' <<<"$history" | wc -l) -ge 4 ]] && break
 done
 
 python3 - "$history" <<'PY'
@@ -54,6 +56,7 @@ expected = {
     "Good.Show.S01E01.720p.mkv": "Completed",
     "Flaky.Movie.2014.1080p.mkv": "Completed",
     "Refuse.Show.S01E01.720p.mkv": "Failed",
+    "Mute.Show.S01E01.720p.mkv": "Completed",
 }
 ok = True
 for name, status in expected.items():
@@ -69,7 +72,7 @@ grab "good%20show" tv
 for i in $(seq 1 15); do
 	sleep 3
 	history=$(curl -sS "$U/sabnzbd/api?mode=history&apikey=$K")
-	[[ $(grep -o '"status":"\(Completed\|Failed\)"' <<<"$history" | wc -l) -ge 4 ]] && break
+	[[ $(grep -o '"status":"\(Completed\|Failed\)"' <<<"$history" | wc -l) -ge 5 ]] && break
 done
 python3 - "$history" <<'PY'
 import json, sys

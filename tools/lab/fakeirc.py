@@ -21,7 +21,7 @@ Every bot has a DCC behaviour, so failures seen with real bots can be replayed:
 Any bot can set "ignore_cancel" to keep its pending offer despite XDCC CANCEL,
 and "cut_after" to close the first "cut_times" transfers (default: all) after
 that many bytes, like a bot that drops connections ("cut_after" can also be a
-list with the length of each transfer). Bots answer DCC RESUME with
+list with the length of each transfer, where 0 sends nothing at all). Bots answer DCC RESUME with
 DCC ACCEPT and then send from the requested position.
 
 Usage: fakeirc.py lab.json
@@ -169,8 +169,11 @@ class Bot:
         async def handle(reader, writer):
             log("bot_connected", bot=self.nick, port=offer.port, pack=offer.pack["id"])
             data = file_bytes(offer.pack["name"], offer.pack["size"])[offer.start:]
-            cut = self.cut_after.pop(0) if isinstance(self.cut_after, list) and self.cut_after else self.cut_after
-            if isinstance(cut, int) and cut and self.cut_times > 0:
+            if isinstance(self.cut_after, list):
+                cut = self.cut_after.pop(0) if self.cut_after else None
+            else:
+                cut = self.cut_after or None
+            if cut is not None and self.cut_times > 0:
                 self.cut_times -= 1
                 data = data[:cut]
                 log("bot_cutting", bot=self.nick, pack=offer.pack["id"], start=offer.start, bytes=len(data))

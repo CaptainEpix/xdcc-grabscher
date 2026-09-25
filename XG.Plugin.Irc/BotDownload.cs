@@ -356,13 +356,16 @@ namespace XG.Plugin.Irc
 					// it did not start
 					else if (_receivedBytes == 0)
 					{
-						_log.Error("FinishWriting(" + Packet + ") downloading did not start, disabling packet");
-						Packet.Enabled = false;
+						// a failed rollback check disabled the packet already and has its own notification
+						if (Packet.Enabled)
+						{
+							// connected, but the bot sent nothing; the plugin retries or disables the packet, like a refused connection
+							_log.Error("FinishWriting(" + Packet + ") downloading did not start");
+							ConnectFailed = true;
 
-						Packet.Parent.HasNetworkProblems = true;
-						Packet.Parent.Commit();
-
-						FireNotificationAdded(Notification.Types.BotConnectFailed, Packet);
+							Packet.Parent.HasNetworkProblems = true;
+							Packet.Parent.Commit();
+						}
 					}
 					// it is incomplete
 					else

@@ -29,8 +29,8 @@ tools/lab/stop.sh /tmp/lab-state
 ```
 
 `tools/lab/check.sh <build dir>` runs the whole Prowlarr/Sonarr path (search,
-NZB, addfile, download, history) against a good, a flaky and a refusing bot and
-fails unless both downloads complete, the refusing bot fails cleanly and a
+NZB, addfile, download, history) against a good, a flaky, a refusing and a mute bot and
+fails unless the other downloads complete, the refusing bot fails cleanly and a
 second grab of the same release completes quickly under a new name.
 
 `tools/lab/check-resume.sh <build dir>` breaks transfers midway, within one bot
