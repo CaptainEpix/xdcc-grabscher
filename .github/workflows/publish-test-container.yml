@@ -1,0 +1,114 @@
+name: Publish test container
+
+# Builds a feature branch into ghcr.io/captainepix/xdcc-grabscher:prowlarr-test
+# for live testing. Never touches the release tags or latest.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to build
+        required: true
+        default: claude/zen-feynman-1rh304
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: captainepix/xdcc-grabscher
+  TEST_TAG: prowlarr-test
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Install Mono
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mono-devel mono-xbuild ca-certificates-mono
+
+      - name: Restore packages
+        run: |
+          curl -sSfL -o /tmp/nuget.nupkg https://api.nuget.org/v3-flatcontainer/nuget.commandline/6.11.1/nuget.commandline.6.11.1.nupkg
+          unzip -q /tmp/nuget.nupkg -d /tmp/nuget
+          mono /tmp/nuget/tools/NuGet.exe restore XG.sln -PackagesDirectory packages -NonInteractive
+          curl -sSfL -o /tmp/nunit.nupkg https://api.nuget.org/v3-flatcontainer/nunit.runners/2.6.3/nunit.runners.2.6.3.nupkg
+          unzip -q /tmp/nunit.nupkg -d /tmp/nunit
+
+      - name: Build
+        run: |
+          xbuild XG.Application/XG.Application.csproj /p:Configuration=Build.Mono
+          xbuild XG.Test/XG.Test.csproj /p:Configuration=Debug
+
+      - name: Run tests
+        working-directory: XG.Test/bin/Debug
+        run: mono /tmp/nunit/tools/nunit-console.exe XG.Test.dll -nologo -noshadow -nothread
+
+  publish:
+    name: Build and publish test image
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Determine revision
+        id: vars
+        shell: bash
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          pull: true
+          provenance: false
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.TEST_TAG }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/CaptainEpix/xdcc-grabscher
+            org.opencontainers.image.version=${{ env.TEST_TAG }}
+            org.opencontainers.image.revision=${{ steps.vars.outputs.revision }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Publish summary
+        shell: bash
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          {
+            echo "## XG test container published"
+            echo
+            echo "- Ref: \`${REF}\` (\`${{ steps.vars.outputs.revision }}\`)"
+            echo "- \`${REGISTRY}/${IMAGE_NAME}:${TEST_TAG}\`"
+            echo "- Digest: \`${{ steps.build.outputs.digest }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
