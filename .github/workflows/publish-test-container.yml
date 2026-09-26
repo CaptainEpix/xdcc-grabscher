@@ -88,7 +88,9 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
-          push: true
+          # Docker media types instead of OCI: the unRAID update check only asks the
+          # registry for Docker manifests and shows "not available" for OCI images.
+          outputs: type=image,push=true,oci-mediatypes=false
           pull: true
           provenance: false
           tags: |
