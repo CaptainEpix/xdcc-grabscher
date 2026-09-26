@@ -304,6 +304,10 @@ One or more errors occurred. (I/O error occurred.)
 
 These appear to be associated with SignalR long-poll connection turnover under Mono. During testing they have not interrupted the web interface, searches, IRC connectivity, or XDCC downloads.
 
+### Truncated API answers under very heavy load
+
+At a few hundred requests per second the embedded web server (Nowin) now and then cuts an answer off after 8 KB, about once in 20,000 requests in the lab's torture test. Prowlarr, Sonarr and Radarr send a few requests per minute and simply ask again on their next poll.
+
 ### WebSockets
 
 The legacy SignalR/Nowin stack used by XG does not provide working WebSocket support under the current Mono environment. This fork explicitly uses SignalR long polling instead.
