@@ -16,6 +16,8 @@ STATE="$(mktemp -d)"
 K="0b1f5e2a-6c3d-4e7f-9a8b-1c2d3e4f5a6b"
 # fail jobs of silent bots after 30s instead of 15 minutes
 export XG_COMPAT_SILENT_BOT_SECONDS=30
+# tv downloads get their own folder, movies stay in the download folder
+export XG_CATEGORY_FOLDERS=tv
 U="http://127.0.0.1:15556"
 export NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
 trap '"$LAB/stop.sh" "$STATE"' EXIT
@@ -71,6 +73,11 @@ for name, status in expected.items():
     got = slots.get(name, {}).get("status", "missing")
     print(("ok   " if got == status else "FAIL ") + name + ": " + got + " (expected " + status + ")")
     ok = ok and got == status
+for name, folder in (("Good.Show.S01E01.720p.mkv", "/dl/tv/"), ("Flaky.Movie.2014.1080p.mkv", "/dl/")):
+    storage = slots.get(name, {}).get("storage", "")
+    good = storage.endswith(folder + name)
+    print(("ok   " if good else "FAIL ") + name + " stored in " + folder + ": " + storage)
+    ok = ok and good
 sys.exit(0 if ok else 1)
 PY
 
@@ -90,3 +97,11 @@ ok = len(paths) == 2 and paths[0].endswith("Good.Show.S01E01.720p (1).mkv")
 print(("ok   " if ok else "FAIL ") + "second grab of Good.Show.S01E01.720p.mkv: " + ", ".join(paths))
 sys.exit(0 if ok else 1)
 PY
+
+# every IRC message must be handled once; a second copy of an offer shows up as this
+if grep -q "is already connected" "$STATE/xg.log"; then
+	echo "FAIL a DCC offer was handled twice:"
+	grep "is already connected" "$STATE/xg.log" | head -3
+	exit 1
+fi
+echo "ok   every DCC offer was handled once"

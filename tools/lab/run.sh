@@ -17,16 +17,21 @@ IRC_PORT="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("
 CHANNEL="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("channel","#lab"))' "$SCENARIO")"
 
 mkdir -p "$STATE/home"
-python3 -u "$LAB/fakeirc.py" "$SCENARIO" >"$STATE/irc.log" 2>&1 &
-echo $! >"$STATE/irc.pid"
-sleep 1
-if ! kill -0 "$(cat "$STATE/irc.pid")" 2>/dev/null; then
-	echo "fake IRC network did not start (port $IRC_PORT in use by an earlier run?):" >&2
-	cat "$STATE/irc.log" >&2
-	exit 1
+# LAB_XG_ONLY=1 restarts only XG, the fake network keeps running
+if [[ -z "${LAB_XG_ONLY:-}" ]]; then
+	python3 -u "$LAB/fakeirc.py" "$SCENARIO" >"$STATE/irc.log" 2>&1 &
+	echo $! >"$STATE/irc.pid"
+	sleep 1
+	if ! kill -0 "$(cat "$STATE/irc.pid")" 2>/dev/null; then
+		echo "fake IRC network did not start (port $IRC_PORT in use by an earlier run?):" >&2
+		cat "$STATE/irc.log" >&2
+		exit 1
+	fi
 fi
 
 touch "$STATE/cmd"
+# keep the log of the previous XG run
+[[ -f "$STATE/xg.log" ]] && mv "$STATE/xg.log" "$STATE/xg.log.$(date +%s)"
 cd "$XG"
 # passive DCC on local ports; set XG_PASSIVE_DCC_PORTS= (empty) to test without it
 (tail -n 0 -f "$STATE/cmd" | HOME="$STATE/home" XDG_CONFIG_HOME="$STATE/home/.config" \

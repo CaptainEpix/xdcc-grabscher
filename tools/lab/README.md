@@ -36,6 +36,13 @@ passive and a silent bot and fails unless the downloads complete, the refusing
 and the silent bot fail cleanly and a second grab of the same release completes
 quickly under a new name.
 
+`tools/lab/torture.py <build dir>` (about 15 minutes) grabs 27 releases at once
+from 17 bots (slow, flaky, dropping, late, passive, silent, broken offers,
+awkward and hostile file names) while other clients hammer the API, kills XG and
+then the IRC network in the middle of transfers, and sends garbage to both APIs.
+Every file must end up byte-identical, every job completed or failed, and XG must
+survive all of it.
+
 `tools/lab/check-resume.sh <build dir>` breaks transfers midway, within one bot,
 across two bots offering the same file and with a passive bot, and fails unless
 XG resumes and the finished files are complete and byte-identical.
@@ -50,7 +57,7 @@ Files:
 - `scenarios/*.json` – bot setups
 - `XgLab.cs` – starts XG like XG.Application, seeds the lab server and API key
 - `kernel32shim.c` – lets the NuGet db4o build run on Linux Mono
-- `build.sh`, `run.sh`, `stop.sh`, `check.sh`, `check-resume.sh`
+- `build.sh`, `run.sh`, `stop.sh`, `check.sh`, `check-resume.sh`, `torture.py`
 
 Builds before the first-start fix may crash once while creating `xgsnapshots.db`
 (an existing issue in the RRD code); starting them again works.

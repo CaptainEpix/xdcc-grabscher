@@ -18,6 +18,9 @@ Every bot has a DCC behaviour, so failures seen with real bots can be replayed:
   passive    offers port 0 and a token, asking the client to listen (reverse DCC);
              connects to the address and port the client answers with
   silent     never answers XDCC requests (an offline or ignoring bot)
+  evil       answers every request with a different malformed DCC offer
+
+"offer_name" makes a bot offer its files under another name than it announces.
   late       starts listening only some time after sending the offer
 
 Any bot can set "ignore_cancel" to keep its pending offer despite XDCC CANCEL,
@@ -87,6 +90,8 @@ class Bot:
         self.rng = random.Random(config.get("seed", self.nick))
         self.port_sequence = list(config.get("port_sequence", []))
         self.ignore_cancel = config.get("ignore_cancel", False)
+        self.offer_name = config.get("offer_name")
+        self.evil_count = 0
         self.cut_after = config.get("cut_after", 0)
         self.cut_times = config.get("cut_times", 1 << 30)
 
@@ -160,6 +165,14 @@ class Bot:
             await self.send_offer(user, offer)
             return
 
+        if self.mode == "evil":
+            line = EVIL_OFFERS[self.evil_count % len(EVIL_OFFERS)]
+            self.evil_count += 1
+            log("bot_evil", bot=self.nick, pack=pack["id"], line=line)
+            await user.notice(self.nick, "** Sending you pack #%d (\"%s\"), which is %s. (resume supported)" % (pack["id"], pack["name"], format_size(pack["size"])))
+            await user.privmsg(self.nick, "\x01" + line + "\x01")
+            return
+
         if self.mode == "passive":
             port = 0
         elif self.port_sequence:
@@ -182,10 +195,13 @@ class Bot:
 
     async def send_offer(self, user, offer):
         pack = offer.pack
+        name = self.offer_name or pack["name"]
+        if " " in name:
+            name = '"%s"' % name
         if offer.port == 0:
-            line = "\x01DCC SEND %s %d 0 %d %d\x01" % (pack["name"], 2130706433, pack["size"], offer.token)
+            line = "\x01DCC SEND %s %d 0 %d %d\x01" % (name, 2130706433, pack["size"], offer.token)
         else:
-            line = "\x01DCC SEND %s %d %d %d\x01" % (pack["name"], 2130706433, offer.port, pack["size"])
+            line = "\x01DCC SEND %s %d %d %d\x01" % (name, 2130706433, offer.port, pack["size"])
         await user.privmsg(self.nick, line)
 
     async def listen(self, user, offer):
@@ -238,6 +254,20 @@ class Bot:
         if offer.server is not None:
             offer.server.close()
             offer.server = None
+
+
+# offers real clients have to survive
+EVIL_OFFERS = [
+    "DCC SEND",
+    "DCC SEND file.mkv notanip 26108 1048576",
+    "DCC SEND file.mkv 2130706433 99999999 1048576",
+    "DCC SEND file.mkv 2130706433 26108 -5",
+    "DCC SEND file.mkv 2130706433 26108 999999999999999999999999",
+    "DCC SEND \"unterminated.mkv 2130706433 26108 1048576",
+    "DCC ACCEPT",
+    "DCC ACCEPT file.mkv 0 notanumber 12",
+    "DCC SEND file.mkv 2130706433 0 1048576",
+]
 
 
 class User:
