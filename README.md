@@ -50,6 +50,19 @@ This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3
 
 ## Docker
 
+### Prebuilt image
+
+Every release is published to the GitHub Container Registry:
+
+```text
+ghcr.io/captainepix/xdcc-grabscher:latest
+ghcr.io/captainepix/xdcc-grabscher:3.3.3.0-mono2026
+```
+
+`latest` follows the newest release; the versioned tag stays fixed. Use either one instead of `xdcc-grabscher:3.3.3.0` in the examples below if you do not want to build the image yourself.
+
+On **unRAID**, install *XDCC-Grabscher* from Community Applications. The template already contains the ports, paths and the optional settings described below.
+
 ### Build
 
 From the repository root:
@@ -212,6 +225,8 @@ Prowlarr only provides the indexer; each *Arr application still needs XG configu
 
 If you want to grab directly from a Prowlarr search, add the same SABnzbd download client in Prowlarr too (its default category `prowlarr` exists in XG).
 
+**If you also use a real SABnzbd** (or any other Usenet client), Sonarr and Radarr may send XG results to it, because both look like Usenet to them. Tie the XG indexer to the XG download client: in Sonarr/Radarr open **Settings → Indexers → XG**, click *Show Advanced*, and set **Download Client** to the XG client. Do the same for your Usenet indexers and their client. If a Prowlarr sync ever resets it, set it again.
+
 ### 4. Remote Path Mapping
 
 XG reports finished downloads with the path **XG itself sees**, by default inside its download folder:
@@ -269,6 +284,24 @@ Packets you start yourself in the XG web interface have no category and stay in 
 - A bot that does not answer at all fails the job after 15 minutes, so the *Arr can try another release. Bots that answer, for example with a queue position, are waited for as long as it takes. `XG_COMPAT_SILENT_BOT_SECONDS` changes the limit.
 - Removing a completed item from the *Arr history only forgets the job. The downloaded file is only deleted when the *Arr explicitly asks to remove the data, and only if it is still that job's file inside XG's download folder.
 - Jobs are stored in `/config/.config/XG/arr-jobs.json` and survive restarts.
+
+### Troubleshooting
+
+| What you see | Cause and fix |
+| --- | --- |
+| Prowlarr/*Arr test: *Incorrect user credentials* or *API Key Incorrect* | The XG API key is still disabled. Enable it in XG (**Api Keys**, icon at the left of the row). |
+| Prowlarr test fails or finds nothing | No bot with packets is online in XG right now. Connect to a server and channel first, or add `&offline=1` to *Additional Parameters*. |
+| An XG result was sent to SABnzbd (or the other way round) | Set the indexer's *Download Client*, see [step 3](#3-sonarr-and-radarr-add-xg-as-download-client). |
+| Download completes in XG but the *Arr never imports it, or reports that a path does not exist | The *Arr sees the download folder under a different path. Add a [Remote Path Mapping](#4-remote-path-mapping). On unRAID, check that the share is mounted into the *Arr container at all; shares under `/mnt/remotes` (Unassigned Devices) need access mode *RW/Slave* in every container that uses them. |
+| Job failed: *The bot ... did not answer XG's requests for 15 minutes* | The bot is offline, overloaded or ignores XG. The *Arr can grab another release; change the limit with `XG_COMPAT_SILENT_BOT_SECONDS`. |
+| Job failed: *The bot only offers passive DCC transfers* | Set up [Passive DCC](#passive-dcc). |
+| Job failed: *The bot did not connect to XG's passive DCC port* | The ports are not reachable from the internet. Check the router forwarding and that the container publishes the same ports. An online port checker should report them as open while XG waits for a bot. |
+| Job failed: *its public address is unknown* | XG could not look up its public address. Set `XG_PASSIVE_DCC_IP`. |
+| Job failed: *XG could not open the file transfer from the bot* | The bot's DCC port refused the connection or sent nothing, even after XG asked again 3 times. Usually a problem on the bot's side; try another bot. |
+| Job stays *queued* for a long time | The bot answered with a queue position. XG waits as long as the bot keeps it queued; the XG web interface shows the bot's last message. |
+| A downloaded file ends in `(1)` | A file with that name already existed in the target folder. XG never overwrites finished files. |
+
+The XG log (`docker logs xdcc-grabscher`) shows what happened to each grab: the request to the bot, its offer, and why a transfer failed.
 
 ### Known limitations
 
