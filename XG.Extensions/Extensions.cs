@@ -60,9 +60,13 @@ namespace XG.Extensions
 			return true;
 		}
 
+		/// <summary>
+		/// Keeps letters and digits of every language (release names like Café.Déjà.Vu or Die.Brücke),
+		/// whitespace and the punctuation used in release names; drops control and file system characters.
+		/// </summary>
 		public static string RemoveSpecialChars(this string aStr)
 		{
-			return Regex.Replace(aStr, @"[^a-z0-9,.;:_\(\)\[\]\s-]", "", RegexOptions.IgnoreCase).Trim();
+			return Regex.Replace(aStr, @"[^\p{L}\p{M}\p{N},.;:_\(\)\[\]'&+!\s-]", "").Trim();
 		}
 
 		public static string Implode(this IEnumerable<string> aList, string aDelimiter)

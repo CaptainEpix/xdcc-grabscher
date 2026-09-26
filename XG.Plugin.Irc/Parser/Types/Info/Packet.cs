@@ -76,7 +76,9 @@ namespace XG.Plugin.Irc.Parser.Types.Info
 					tPack.LastMentioned = DateTime.Now;
 
 					string name = RemoveSpecialIrcCharsFromPacketName(match.Groups["pack_name"].ToString());
-					if (tPack.Name != name && tPack.Name != "")
+					// older versions dropped every non-ASCII letter and apostrophe; such a name is still the same file
+					bool sameFile = tPack.Name == LegacyName(name);
+					if (tPack.Name != name && tPack.Name != "" && !sameFile)
 					{
 						tPack.Enabled = false;
 						if (!tPack.Connected)
@@ -84,6 +86,12 @@ namespace XG.Plugin.Irc.Parser.Types.Info
 							tPack.RealName = "";
 							tPack.RealSize = 0;
 						}
+					}
+					if (sameFile && tPack.Name != name)
+					{
+						var lastUpdated = tPack.LastUpdated;
+						tPack.Name = name;
+						tPack.LastUpdated = lastUpdated;
 					}
 					tPack.Name = name;
 
@@ -156,6 +164,11 @@ namespace XG.Plugin.Irc.Parser.Types.Info
 		}
 
 		#region HELPER
+
+		static string LegacyName(string aName)
+		{
+			return System.Text.RegularExpressions.Regex.Replace(aName, @"[^a-z0-9,.;:_\(\)\[\]\s-]", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+		}
 
 		string RemoveSpecialIrcCharsFromPacketName(string aData)
 		{

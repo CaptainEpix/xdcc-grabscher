@@ -537,12 +537,27 @@ namespace XG.Plugin.Webserver.Search
 
 		static Analyzer CreateAnalyzer()
 		{
-			return new StandardAnalyzer(Lucene.Net.Util.Version.LUCENE_30, new HashSet<string>());
+			return new FoldingAnalyzer();
+		}
+
+		/// <summary>
+		/// The standard analyzer without stop words, which also folds accents: Café, Cafe and cafe are the same word.
+		/// </summary>
+		class FoldingAnalyzer : Analyzer
+		{
+			public override TokenStream TokenStream(string aFieldName, System.IO.TextReader aReader)
+			{
+				TokenStream stream = new StandardTokenizer(Lucene.Net.Util.Version.LUCENE_30, aReader);
+				stream = new StandardFilter(stream);
+				stream = new LowerCaseFilter(stream);
+				return new ASCIIFoldingFilter(stream);
+			}
 		}
 
 		static string NormalizeName(string aName)
 		{
-			return aName.Replace("_", " ").Replace("-", " ").Replace(".", " ");
+			// apostrophes are left out by most release names and searches: It's = Its
+			return aName.Replace("_", " ").Replace("-", " ").Replace(".", " ").Replace("'", "").Replace("\u2019", "");
 		}
 
 		static Document PacketToDocument(Packet aPacket)

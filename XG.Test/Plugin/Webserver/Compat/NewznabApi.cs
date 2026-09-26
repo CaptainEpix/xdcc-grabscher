@@ -107,6 +107,24 @@ namespace XG.Test.Plugin.Webserver.Compat
 		}
 
 		[Test]
+		public void AccentAndApostropheInsensitiveSearchTest()
+		{
+			var cafe = new XG.Model.Domain.Packet { Id = 20, Name = "Café.Déjà.Vu.S01E02.720p.mkv", Size = 100 };
+			var quotes = new XG.Model.Domain.Packet { Id = 21, Name = "It's.Someone's.Show.S01E03.720p.mkv", Size = 100 };
+			_data.OnlineBot.AddPacket(cafe);
+			_data.OnlineBot.AddPacket(quotes);
+
+			foreach (string query in new[] { "Cafe Deja Vu", "Café Déjà Vu", "cafe deja vu s01e02" })
+			{
+				Assert.AreEqual(new[] { cafe.Name }, Titles(Search("t", "search", "q", query)).ToArray(), query);
+			}
+			foreach (string query in new[] { "Its Someones Show", "It's Someone's Show" })
+			{
+				Assert.AreEqual(new[] { quotes.Name }, Titles(Search("t", "search", "q", query)).ToArray(), query);
+			}
+		}
+
+		[Test]
 		public void PassiveBotsHiddenUnlessSupportedTest()
 		{
 			try
