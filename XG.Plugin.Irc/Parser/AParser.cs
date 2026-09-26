@@ -64,6 +64,16 @@ namespace XG.Plugin.Irc.Parser
 			OnJoinChannelsFromBot(aSender, aEventArgs);
 		}
 
+		/// <summary>
+		/// A bot offered a file while every download slot or passive port was taken.
+		/// </summary>
+		public event EventHandler<EventArgs<Bot>> OnNoFreeSlot = delegate {};
+
+		protected void FireNoFreeSlot(object aSender, EventArgs<Bot> aEventArgs)
+		{
+			OnNoFreeSlot(aSender, aEventArgs);
+		}
+
 		public event EventHandler<EventArgs<Bot>> OnRemoveDownload = delegate {};
 
 		protected void FireRemoveDownload(object aSender, EventArgs<Bot> aEventArgs)

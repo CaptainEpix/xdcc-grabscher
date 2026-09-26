@@ -143,6 +143,12 @@ namespace XG.Plugin.Irc
 							ParserOnUnRequestFromBot(tBot);
 						}
 					}
+					// e.g. a broken offer or a denied request: the bot's next packet does not have to
+					// wait for the long "no answer" timer of this request
+					if (tBot.State == Bot.States.Idle && tBot.OldestActivePacket() != null)
+					{
+						RescheduleBot(tBot, Settings.Default.CommandWaitTime);
+					}
 				}
 			}
 		}

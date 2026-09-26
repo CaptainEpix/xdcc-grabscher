@@ -84,6 +84,7 @@ namespace XG.Plugin.Irc.Parser
 				parser.OnNotificationAdded -= FireNotificationAdded;
 				parser.OnQueueRequestFromBot -= FireQueueRequestFromBot;
 				parser.OnRemoveDownload -= FireRemoveDownload;
+				parser.OnNoFreeSlot -= FireNoFreeSlot;
 				parser.OnSendMessage -= FireSendMessage;
 				parser.OnUnRequestFromBot -= FireUnRequestFromBot;
 				parser.OnWriteLine -= FireWriteLine;
@@ -160,6 +161,7 @@ namespace XG.Plugin.Irc.Parser
 			aParser.OnNotificationAdded += FireNotificationAdded;
 			aParser.OnQueueRequestFromBot += FireQueueRequestFromBot;
 			aParser.OnRemoveDownload += FireRemoveDownload;
+			aParser.OnNoFreeSlot += FireNoFreeSlot;
 			aParser.OnSendMessage += FireSendMessage;
 			aParser.OnUnRequestFromBot += FireUnRequestFromBot;
 			aParser.OnWriteLine += FireWriteLine;

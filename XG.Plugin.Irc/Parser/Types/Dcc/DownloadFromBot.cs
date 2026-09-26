@@ -275,8 +275,8 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 			var reservation = PassiveDcc.Reserve(aPacket.Guid);
 			if (reservation == null)
 			{
-				// all passive ports are busy, ask again later; the bot re-sends its pending offer then
-				FireQueueRequestFromBot(this, new EventArgs<Bot, int>(aBot, Settings.Default.CommandWaitTime));
+				// all passive ports are busy, ask again when one is free; the bot re-sends its pending offer then
+				FireNoFreeSlot(this, new EventArgs<Bot>(aBot));
 				return;
 			}
 

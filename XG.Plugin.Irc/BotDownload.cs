@@ -119,22 +119,17 @@ namespace XG.Plugin.Irc
 			Packet.Parent.QueueTime = 0;
 			Packet.Parent.Commit();
 
-			using (_tcpClient = Passive != null ? AcceptFromBot() : new TcpClient())
+			using (_tcpClient = Passive != null ? AcceptFromBot() : ConnectToBot())
 			{
 				try
 				{
 					if (_tcpClient == null)
 					{
-						// the bot never connected to the passive port
+						// the bot's port refused or the bot never connected to the passive port
 						return;
 					}
 					_tcpClient.SendTimeout = Settings.Default.DownloadTimeoutTime * 1000;
 					_tcpClient.ReceiveTimeout = Settings.Default.DownloadTimeoutTime * 1000;
-
-					if (Passive == null)
-					{
-						_tcpClient.Connect(IP, Port);
-					}
 					_log.Info("StartRun() connected");
 
 					using (Stream stream = new ThrottledStream(_tcpClient.GetStream(), Settings.Default.MaxDownloadSpeedInKB * 1000))
@@ -193,6 +188,42 @@ namespace XG.Plugin.Irc
 					_writer = null;
 				}
 			}
+		}
+
+		const int RefusedConnectAttempts = 3;
+
+		/// <summary>
+		/// Connects to the bot. A refused connection is tried again a few times, some bots open
+		/// their port a moment after sending the offer. Returns null if it does not work.
+		/// </summary>
+		TcpClient ConnectToBot()
+		{
+			for (int attempt = 1; attempt <= RefusedConnectAttempts && AllowRunning; attempt++)
+			{
+				var client = new TcpClient();
+				try
+				{
+					client.Connect(IP, Port);
+					return client;
+				}
+				catch (SocketException ex)
+				{
+					client.Close();
+					_log.Warn("ConnectToBot() " + IP + ":" + Port + " attempt " + attempt + " failed: " + ex.Message);
+					if (ex.SocketErrorCode != SocketError.ConnectionRefused)
+					{
+						break;
+					}
+					Thread.Sleep(1000);
+				}
+				catch (Exception ex)
+				{
+					client.Close();
+					_log.Error("ConnectToBot() " + IP + ":" + Port, ex);
+					break;
+				}
+			}
+			return null;
 		}
 
 		/// <summary>

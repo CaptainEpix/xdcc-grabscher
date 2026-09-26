@@ -52,6 +52,9 @@ namespace XG.Plugin.Irc
 
 		readonly Parser.Parser _parser = new Parser.Parser();
 
+		// bots whose offer came while every download slot or passive port was taken, oldest first
+		readonly List<Bot> _waitingForSlot = new List<Bot>();
+
 		#endregion
 
 		#region AWorker
@@ -59,6 +62,7 @@ namespace XG.Plugin.Irc
 		protected override void StartRun()
 		{
 			_parser.OnAddDownload += BotConnect;
+			_parser.OnNoFreeSlot += (aSender, aEventArgs) => WaitForSlot(aEventArgs.Value1);
 			_parser.OnDownloadXdccList += DownloadXdccList;
 			_parser.OnNotificationAdded += AddNotification;
 			_parser.OnRemoveDownload += (aSender, aEventArgs) => BotDisconnect(aEventArgs.Value1);
@@ -249,6 +253,7 @@ namespace XG.Plugin.Irc
 			{
 				_log.Error("BotConnect(" + aEventArgs.Value1 + ") skipping, because already " + Settings.Default.MaxDownloads + " packets are downloading");
 				PassiveDcc.Release(passive);
+				WaitForSlot(aEventArgs.Value1.Parent);
 
 				IrcConnection connection = _connections.SingleOrDefault(c => c.Server == aEventArgs.Value1.Parent.Parent.Parent);
 				if (connection != null)
@@ -284,6 +289,47 @@ namespace XG.Plugin.Irc
 				// uhh - that should not happen
 				_log.Error("BotConnect(" + aEventArgs.Value1 + ") is already downloading");
 				PassiveDcc.Release(passive);
+			}
+		}
+
+		void WaitForSlot(Bot aBot)
+		{
+			lock (_waitingForSlot)
+			{
+				if (!_waitingForSlot.Contains(aBot))
+				{
+					_log.Info("WaitForSlot(" + aBot + ") asking again when a download is finished");
+					_waitingForSlot.Add(aBot);
+				}
+			}
+		}
+
+		/// <summary>
+		/// A download ended, so its slot (and its passive port) is free: ask the bots which had to wait,
+		/// instead of letting them wait for the long "no answer" timer of their request.
+		/// </summary>
+		void WakeWaitingBots()
+		{
+			int free = Settings.Default.MaxDownloads > 0
+				? Settings.Default.MaxDownloads - (from file in Files.All where file.Connected select file).Count()
+				: int.MaxValue;
+			var wake = new List<Bot>();
+			lock (_waitingForSlot)
+			{
+				while (free-- > 0 && _waitingForSlot.Count > 0)
+				{
+					wake.Add(_waitingForSlot[0]);
+					_waitingForSlot.RemoveAt(0);
+				}
+			}
+			foreach (var bot in wake)
+			{
+				var connection = _connections.SingleOrDefault(c => c.Server == bot.Parent.Parent);
+				if (connection != null)
+				{
+					_log.Info("WakeWaitingBots() asking " + bot + " again");
+					connection.RescheduleBot(bot, 2);
+				}
 			}
 		}
 
@@ -347,6 +393,7 @@ namespace XG.Plugin.Irc
 						// the bot answered, so the "no answer" timer of the request is obsolete and would delay the next packet up to BotWaitTime
 						connection.RescheduleBot(aEventArgs.Value1.Parent, Settings.Default.CommandWaitTime);
 					}
+					WakeWaitingBots();
 				}
 				catch (Exception ex)
 				{
