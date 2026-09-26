@@ -1,12 +1,36 @@
-# XG 3.3.2.0 — Mono/Docker Compatibility Fork
+# XG 3.3.3.0 — Mono/Docker Compatibility Fork
 
 This fork revives **XG (XDCC Grabscher) 3.3.0.0** for modern Mono and Docker environments.
 
 XG was originally created by **Lars Formella**. This fork preserves the original project, licensing, and attribution while applying compatibility and maintenance fixes needed to run XG on current systems.
 
-This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3.2.0**.
+This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3.3.0**.
 
 ## What's changed
+
+### 3.3.3.0
+
+- **Prowlarr, Sonarr and Radarr integration**: XG works as a Newznab indexer and a SABnzbd-compatible download client (see below)
+- **Passive (reverse) DCC** support with forwarded ports, ready for VPN setups (see [Passive DCC](#passive-dcc))
+- Optional **download folder per category** (`dl/tv`, `dl/movies`)
+- More reliable downloads:
+  - refused or silent DCC connections are retried instead of giving up on the first try
+  - stale offers are cancelled, and offers are matched to packets by file name
+  - a broken transfer is never finished as complete, and parts are resumed, also from another bot
+  - finished files never replace existing ones (saved as `name (1).ext`)
+  - the next packet from a bot, or a bot waiting for a free slot, is requested within seconds instead of up to 4 minutes
+  - bots that never answer or send unusable offers end the request, so the *Arr can try another release
+- Stability and security:
+  - a malformed DCC line from anyone in a channel no longer crashes XG
+  - IRC messages are never handled twice, and queues shared between threads are locked
+  - pack lists are only downloaded when XG asked for them
+- Packet names keep non-ASCII letters (umlauts, accents), and search ignores accents and apostrophes
+- Fixed the crash on the very first start while creating `xgsnapshots.db`
+- Fixed `/api/1.0` requests hanging and wrong responses
+- Download folders changed in the web interface work without a restart
+- A lab with a fake IRC network and scripted bots for testing XG without real IRC (`tools/lab`)
+
+### 3.3.2.0 and earlier
 
 - Builds and runs with **Mono 6.12**
 - Added a reproducible multi-stage **Docker** build
@@ -23,7 +47,6 @@ This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3
 - Fixed **NickServ** authentication and reconnect handling, including protected-channel retries after identification
 - Prevented NickServ credentials from being sent as an IRC server password and redacted authentication credentials from logs
 - Fixed the IRC password field in the web interface
-- Updated application and web-resource versioning to **3.3.2.0**
 
 ## Docker
 
@@ -32,7 +55,7 @@ This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3
 From the repository root:
 
 ```bash
-docker build -t xdcc-grabscher:3.3.2.0 .
+docker build -t xdcc-grabscher:3.3.3.0 .
 ```
 
 ### Run
@@ -44,7 +67,7 @@ docker run -d \
   -p 5556:5556 \
   -v /path/to/config:/config \
   -v /path/to/downloads:/config/.config/XG/dl \
-  xdcc-grabscher:3.3.2.0
+  xdcc-grabscher:3.3.3.0
 ```
 
 Then open:
@@ -117,7 +140,7 @@ docker run -d \
   -e XG_PASSIVE_DCC_PORTS=50000-50004 \
   -v /path/to/config:/config \
   -v /path/to/downloads:/config/.config/XG/dl \
-  xdcc-grabscher:3.3.2.0
+  xdcc-grabscher:3.3.3.0
 ```
 
 **Behind a VPN** (e.g. XG sharing the network of a gluetun container): the ports have to be forwarded by the VPN provider, and not every provider offers that. Because XG looks up its address through its own connection, it finds the VPN's address by itself. If the provider forwards a fixed port, set it in `XG_PASSIVE_DCC_PORTS`; if the forwarded port changes on every connection, share gluetun's port file with XG and point `XG_PASSIVE_DCC_PORTS_FILE` at it.
@@ -290,13 +313,13 @@ The legacy SignalR/Nowin stack used by XG does not provide working WebSocket sup
 Application version:
 
 ```text
-3.3.2.0
+3.3.3.0
 ```
 
 Compatibility release/tag:
 
 ```text
-v3.3.2.0-mono2026
+v3.3.3.0-mono2026
 ```
 
 ## Original project

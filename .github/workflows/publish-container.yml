@@ -10,7 +10,7 @@ on:
       tag:
         description: Existing release tag to build and publish
         required: true
-        default: v3.3.2.0-mono2026
+        default: v3.3.3.0-mono2026
 
 permissions:
   contents: read
