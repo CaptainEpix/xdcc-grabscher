@@ -9,7 +9,7 @@ on:
       ref:
         description: Branch, tag or commit to build
         required: true
-        default: claude/zen-feynman-1rh304
+        default: mono-2026
 
 permissions:
   contents: read
