@@ -242,7 +242,18 @@ namespace XG.Business.Helper
 						FireFileFinished(aFile, matchedPackets.ToArray(), readyPath, true);
 
 						// great, all went right, so lets check what we can do with the file
-						var thread = new Thread(() => HandleFile(readyPath));
+						var thread = new Thread(() =>
+						{
+							// an unhandled exception in any thread ends the whole process under Mono
+							try
+							{
+								HandleFile(readyPath);
+							}
+							catch (Exception ex)
+							{
+								Log.Fatal("HandleFile(" + readyPath + ")", ex);
+							}
+						});
 						thread.Name = "HandleFile|" + aFile.Name;
 						thread.Start();
 					}

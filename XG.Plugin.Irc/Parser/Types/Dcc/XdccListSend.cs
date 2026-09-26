@@ -38,10 +38,11 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 			{
 				return false;
 			}
-			string text = aMessage.Text.Substring(5, aMessage.Text.Length - 6);
+			// bots send all kinds of broken offers, never trust the number of fields
+			string text = aMessage.Text.Substring(5).TrimEnd('\u0001');
 
 			string[] tDataList = text.Split(' ');
-			if (tDataList[0] == "SEND")
+			if (tDataList[0] == "SEND" && tDataList.Length >= 5)
 			{
 				if (!Helper.Match(tDataList[1], ".*\\.txt$").Success)
 				{

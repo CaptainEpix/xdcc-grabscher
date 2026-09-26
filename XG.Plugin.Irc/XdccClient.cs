@@ -290,63 +290,71 @@ namespace XG.Plugin.Irc
 					continue;
 				}
 
-				// run
-				switch (tEvent.Type)
+				// one bad event must not stop the thread, XG would not hear anything from IRC anymore
+				try
 				{
-					case IrcEvent.EventType.Ban:
-						ClientBan((BanEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.ChannelMessage:
-						ClientChannelMessage((IrcEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Connected:
-						ClientConnected(tEvent.Event);
-						break;
-					case IrcEvent.EventType.CtcpReply:
-						MessageReceived((CtcpEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.CtcpRequest:
-						MessageReceived((CtcpEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.ErrorMessage:
-						ClientErrorMessage((IrcEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Join:
-						ClientJoin((JoinEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Kick:
-						ClientKick((KickEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Part:
-						ClientPart((PartEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Names:
-						ClientNames((NamesEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.NickChange:
-						ClienNickChange((NickChangeEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.QueryMessage:
-						MessageReceived((IrcEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.QueryNotice:
-						MessageReceived((IrcEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Quit:
-						ClientQuit((QuitEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.ReadLine:
-						OnReadLine(this, new EventArgs<string>(((ReadLineEventArgs) tEvent.Event).Line));
-						break;
-					case IrcEvent.EventType.Topic:
-						ClientTopic((TopicEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.TopicChange:
-						ClientTopicChange((TopicChangeEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.UnBan:
-						ClientUnBan((UnbanEventArgs) tEvent.Event);
-						break;
+					// run
+					switch (tEvent.Type)
+					{
+						case IrcEvent.EventType.Ban:
+							ClientBan((BanEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.ChannelMessage:
+							ClientChannelMessage((IrcEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Connected:
+							ClientConnected(tEvent.Event);
+							break;
+						case IrcEvent.EventType.CtcpReply:
+							MessageReceived((CtcpEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.CtcpRequest:
+							MessageReceived((CtcpEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.ErrorMessage:
+							ClientErrorMessage((IrcEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Join:
+							ClientJoin((JoinEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Kick:
+							ClientKick((KickEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Part:
+							ClientPart((PartEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Names:
+							ClientNames((NamesEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.NickChange:
+							ClienNickChange((NickChangeEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.QueryMessage:
+							MessageReceived((IrcEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.QueryNotice:
+							MessageReceived((IrcEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Quit:
+							ClientQuit((QuitEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.ReadLine:
+							OnReadLine(this, new EventArgs<string>(((ReadLineEventArgs) tEvent.Event).Line));
+							break;
+						case IrcEvent.EventType.Topic:
+							ClientTopic((TopicEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.TopicChange:
+							ClientTopicChange((TopicChangeEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.UnBan:
+							ClientUnBan((UnbanEventArgs) tEvent.Event);
+							break;
+					}
+				}
+				catch (Exception ex)
+				{
+					_log.Fatal("EventThread() " + tEvent.Type, ex);
 				}
 			}
 		}

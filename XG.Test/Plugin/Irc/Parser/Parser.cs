@@ -58,5 +58,33 @@ namespace XG.Test.Plugin.Irc.Parser
 				parser.DeInitialize();
 			}
 		}
+
+		[Test]
+		public void BadMessageDoesNotStopParsingTest()
+		{
+			var parser = new XG.Plugin.Irc.Parser.Parser();
+			int downloads = 0;
+			parser.OnAddDownload += (sender, e) => Interlocked.Increment(ref downloads);
+			parser.Initialize();
+			try
+			{
+				Packet.Connected = false;
+				// messages which made parsers throw, which ended the parse thread (and XG) for good;
+				// sent by someone else, a bot's broken offer would end its own request
+				parser.Parse(new Message { Channel = Channel, Nick = "SomeoneElse", Text = "\u0001DCC SEND\u0001" });
+				parser.Parse(new Message { Channel = Channel, Nick = "SomeoneElse", Text = "\u0001DCC " });
+				parser.Parse(new Message { Channel = Channel, Nick = Bot.Name, Text = "\u0001DCC SEND Testfile.with.a.long.name.mkv 1203194610 45000 975304559\u0001" });
+				for (int wait = 0; wait < 200 && downloads == 0; wait++)
+				{
+					Thread.Sleep(10);
+				}
+				Assert.AreEqual(1, downloads, "the parser still works after bad messages");
+			}
+			finally
+			{
+				parser.DeInitialize();
+				Packet.Enabled = true;
+			}
+		}
 	}
 }

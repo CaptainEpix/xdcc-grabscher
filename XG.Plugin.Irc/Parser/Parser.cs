@@ -138,9 +138,14 @@ namespace XG.Plugin.Irc.Parser
 
 				foreach (var parser in _ircParsers)
 				{
-					if (parser.Parse(tMessage))
+					// one bad message must not stop the thread, XG would not parse anything anymore
+					try
 					{
-						continue;
+						parser.Parse(tMessage);
+					}
+					catch (Exception ex)
+					{
+						Log.Fatal("ParseThread() " + parser.GetType().Name + " failed on " + tMessage.Nick + ": " + tMessage.Text, ex);
 					}
 				}
 			}
