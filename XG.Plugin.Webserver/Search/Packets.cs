@@ -88,8 +88,8 @@ namespace XG.Plugin.Webserver.Search
 
 		static void ObjectAdded(object aSender, EventArgs<AObject, AObject> aEventArgs)
 		{
-			var packet = aEventArgs.Value2 as Packet;
-			if (packet != null)
+			// a new bot arrives with its first packets already attached, so index the whole subtree
+			foreach (var packet in PacketsOf(aEventArgs.Value2))
 			{
 				AddToIndex(packet);
 			}
@@ -97,17 +97,31 @@ namespace XG.Plugin.Webserver.Search
 
 		static void ObjectRemoved(object aSender, EventArgs<AObject, AObject> aEventArgs)
 		{
-			var packet = aEventArgs.Value2 as Packet;
-			if (packet != null)
+			foreach (var packet in PacketsOf(aEventArgs.Value2))
 			{
 				RemoveFromIndex(packet);
 			}
 		}
 
+		static IEnumerable<Packet> PacketsOf(AObject aObject)
+		{
+			var packet = aObject as Packet;
+			if (packet != null)
+			{
+				return new[] { packet };
+			}
+			var objects = aObject as AObjects;
+			if (objects != null)
+			{
+				return objects.Children.SelectMany(PacketsOf).ToArray();
+			}
+			return new Packet[0];
+		}
+
 		static void ObjectChanged(object aSender, EventArgs<AObject, string[]> aEventArgs)
 		{
 			var bot = aEventArgs.Value1 as Bot;
-			if (bot != null && aEventArgs.Value2.Contains("Connected"))
+			if (bot != null && (aEventArgs.Value2.Contains("Connected") || aEventArgs.Value2.Contains("PassiveDccTime")))
 			{
 				foreach (var pack in bot.Packets)
 				{
@@ -142,8 +156,9 @@ namespace XG.Plugin.Webserver.Search
 		public static void Initialize()
 		{
 			_dir = new RAMDirectory(); //FSDirectory.Open(new DirectoryInfo(@"C:/test_lucene"));
-			_analyzer = new StandardAnalyzer(Lucene.Net.Util.Version.LUCENE_30, new HashSet<string>());
+			_analyzer = CreateAnalyzer();
 			_writer = new IndexWriter(_dir, _analyzer, IndexWriter.MaxFieldLength.LIMITED);
+			_packets = new Hashtable();
 
 			Packet[] packets = (from server in Servers.All from channel in server.Channels from bot in channel.Bots from packet in bot.Packets select packet).ToArray();
 			foreach (var packet in packets)
@@ -205,6 +220,80 @@ namespace XG.Plugin.Webserver.Search
 			}
 
 			return results;
+		}
+
+		/// <summary>
+		/// Looks up an indexed packet by guid without walking the server tree.
+		/// </summary>
+		public static Packet GetPacket(Guid aGuid)
+		{
+			return _packets[aGuid.ToString()] as Packet;
+		}
+
+		/// <summary>
+		/// Splits free text into the same tokens the Name field is indexed with,
+		/// so that callers can build queries which match packet names exactly.
+		/// </summary>
+		public static string[] AnalyzeName(string aText)
+		{
+			if (string.IsNullOrWhiteSpace(aText))
+			{
+				return new string[0];
+			}
+
+			var tokens = new List<string>();
+			var analyzer = _analyzer ?? CreateAnalyzer();
+			using (var stream = analyzer.TokenStream("Name", new System.IO.StringReader(NormalizeName(aText))))
+			{
+				var term = stream.AddAttribute<Lucene.Net.Analysis.Tokenattributes.ITermAttribute>();
+				while (stream.IncrementToken())
+				{
+					tokens.Add(term.Term);
+				}
+			}
+			return tokens.ToArray();
+		}
+
+		/// <summary>
+		/// Searches with already analyzed tokens. Every required and prefix token must match,
+		/// no excluded token may match. Without any required or prefix token all packets match.
+		/// Packets of bots which only offer passive DCC transfers can be left out, XG can not download them.
+		/// </summary>
+		public static Result GetResults(IEnumerable<string> aRequired, IEnumerable<string> aExcluded, IEnumerable<string> aPrefixes, bool aShowOfflineBots, bool aHidePassiveBots, int aStart, int aLimit, string aSort, bool aReverse)
+		{
+			var query = new BooleanQuery();
+			bool positive = false;
+			foreach (string str in aRequired)
+			{
+				query.Add(new TermQuery(new Term("Name", str)), Occur.MUST);
+				positive = true;
+			}
+			foreach (string str in aPrefixes)
+			{
+				query.Add(new PrefixQuery(new Term("Name", str)), Occur.MUST);
+				positive = true;
+			}
+			foreach (string str in aExcluded)
+			{
+				query.Add(new TermQuery(new Term("Name", str)), Occur.MUST_NOT);
+			}
+			if (!positive)
+			{
+				query.Add(new MatchAllDocsQuery(), Occur.MUST);
+			}
+			if (!aShowOfflineBots)
+			{
+				query.Add(new TermQuery(new Term("Online", "1")), Occur.MUST);
+			}
+			if (aHidePassiveBots)
+			{
+				query.Add(new TermQuery(new Term("PassiveOnly", "1")), Occur.MUST_NOT);
+			}
+
+			using (var reader = _writer.GetReader())
+			{
+				return GetResult(new IndexSearcher(reader), query, BuildSort(aSort, aReverse), aStart, aLimit);
+			}
 		}
 
 		static Results GetPredefinedResults(IndexSearcher aSearcher, Query aQuery,  Sort aSort, int aStart, int aLimit)
@@ -398,6 +487,7 @@ namespace XG.Plugin.Webserver.Search
 				case "Speed":
 				case "TimeMissing":
 				case "LastMentioned":
+				case "LastUpdated":
 					return new Sort(new SortField(aSort, SortField.LONG, aReverse));
 
 				default:
@@ -411,21 +501,27 @@ namespace XG.Plugin.Webserver.Search
 
 		static void AddToIndex(Packet aPacket)
 		{
-			_writer.UpdateDocument(new Term("Guid", aPacket.Guid.ToString()), PacketToDocument(aPacket));
-			_packets.Add(aPacket.Guid.ToString(), aPacket);
-			_saveNeeded = true;
+			UpdateIndex(aPacket);
 		}
 
 		static void UpdateIndex(Packet aPacket)
 		{
 			_writer.UpdateDocument(new Term("Guid", aPacket.Guid.ToString()), PacketToDocument(aPacket));
+			// keep the lookup in sync with every indexed document, results are resolved through it
+			lock (_packets.SyncRoot)
+			{
+				_packets[aPacket.Guid.ToString()] = aPacket;
+			}
 			_saveNeeded = true;
 		}
 
 		static void RemoveFromIndex(Packet aPacket)
 		{
 			_writer.DeleteDocuments(new TermQuery(new Term("Guid", aPacket.Guid.ToString())));
-			_packets.Remove(aPacket.Guid.ToString());
+			lock (_packets.SyncRoot)
+			{
+				_packets.Remove(aPacket.Guid.ToString());
+			}
 			_saveNeeded = true;
 		}
 
@@ -439,6 +535,31 @@ namespace XG.Plugin.Webserver.Search
 			}
 		}
 
+		static Analyzer CreateAnalyzer()
+		{
+			return new FoldingAnalyzer();
+		}
+
+		/// <summary>
+		/// The standard analyzer without stop words, which also folds accents: Café, Cafe and cafe are the same word.
+		/// </summary>
+		class FoldingAnalyzer : Analyzer
+		{
+			public override TokenStream TokenStream(string aFieldName, System.IO.TextReader aReader)
+			{
+				TokenStream stream = new StandardTokenizer(Lucene.Net.Util.Version.LUCENE_30, aReader);
+				stream = new StandardFilter(stream);
+				stream = new LowerCaseFilter(stream);
+				return new ASCIIFoldingFilter(stream);
+			}
+		}
+
+		static string NormalizeName(string aName)
+		{
+			// apostrophes are left out by most release names and searches: It's = Its
+			return aName.Replace("_", " ").Replace("-", " ").Replace(".", " ").Replace("'", "").Replace("\u2019", "");
+		}
+
 		static Document PacketToDocument(Packet aPacket)
 		{
 			var name = aPacket.RealName != null && aPacket.RealName != "" ? aPacket.RealName : aPacket.Name;
@@ -446,12 +567,14 @@ namespace XG.Plugin.Webserver.Search
 			var doc = new Document();
 			doc.Add(new Field("Guid", aPacket.Guid.ToString(), Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("Id", "" + aPacket.Id, Field.Store.YES, Field.Index.NOT_ANALYZED));
-			doc.Add(new Field("Name", name.Replace("_", " ").Replace("-", " ").Replace(".", " "), Field.Store.YES, Field.Index.ANALYZED));
+			doc.Add(new Field("Name", NormalizeName(name), Field.Store.YES, Field.Index.ANALYZED));
 			doc.Add(new Field("Size", aPacket.Size.ToString(SIZE_STRING), Field.Store.YES, Field.Index.NOT_ANALYZED ));
 			doc.Add(new Field("Speed", "" + (aPacket.File != null ? aPacket.File.Speed : 0), Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("TimeMissing", "" + (aPacket.File != null ? aPacket.File.TimeMissing : 0), Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("LastMentioned", "" + aPacket.LastMentioned.ToTimestamp(), Field.Store.YES, Field.Index.NOT_ANALYZED));
+			doc.Add(new Field("LastUpdated", "" + aPacket.LastUpdated.ToTimestamp(), Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("Online", aPacket.Parent.Connected ? "1" : "0", Field.Store.YES, Field.Index.NOT_ANALYZED));
+			doc.Add(new Field("PassiveOnly", aPacket.Parent.OffersPassiveDccOnly ? "1" : "0", Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("Enabled", aPacket.Enabled ? "1" : "0", Field.Store.YES, Field.Index.NOT_ANALYZED));
 			doc.Add(new Field("Connected", aPacket.Connected ? "1" : "0", Field.Store.YES, Field.Index.NOT_ANALYZED));
 			return doc;

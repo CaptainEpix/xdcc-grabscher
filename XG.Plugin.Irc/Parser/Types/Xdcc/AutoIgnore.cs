@@ -55,7 +55,7 @@ namespace XG.Plugin.Irc.Parser.Types.Xdcc
 					{
 						time += valueInt;
 					}
-					FireQueueRequestFromBot(this, new EventArgs<Bot, int>(aBot, time * 1000));
+					FireQueueRequestFromBot(this, new EventArgs<Bot, int>(aBot, time));
 				}
 			}
 			return match.Success;

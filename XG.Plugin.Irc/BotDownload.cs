@@ -28,6 +28,7 @@ using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Threading;
 using XG.Business.Helper;
 using XG.Config.Properties;
 using XG.Extensions;
@@ -64,8 +65,18 @@ namespace XG.Plugin.Irc
 		public Files Files { get; set; }
 
 		public Int64 StartSize { get; set; }
+
+		/// <summary>
+		/// The bot's DCC port could not be connected; the plugin decides whether to ask again.
+		/// </summary>
+		public bool ConnectFailed { get; private set; }
 		public IPAddress IP { get; set; }
 		public int Port { get; set; }
+
+		/// <summary>
+		/// The listening port of a passive transfer, where the bot connects to XG; null if XG connects to the bot.
+		/// </summary>
+		public PassiveDcc.Reservation Passive { get; set; }
 		public Int64 MaxData { get; set; }
 
 		TcpClient _tcpClient;
@@ -108,14 +119,17 @@ namespace XG.Plugin.Irc
 			Packet.Parent.QueueTime = 0;
 			Packet.Parent.Commit();
 
-			using (_tcpClient = new TcpClient())
+			using (_tcpClient = Passive != null ? AcceptFromBot() : ConnectToBot())
 			{
-				_tcpClient.SendTimeout = Settings.Default.DownloadTimeoutTime * 1000;
-				_tcpClient.ReceiveTimeout = Settings.Default.DownloadTimeoutTime * 1000;
-
 				try
 				{
-					_tcpClient.Connect(IP, Port);
+					if (_tcpClient == null)
+					{
+						// the bot's port refused or the bot never connected to the passive port
+						return;
+					}
+					_tcpClient.SendTimeout = Settings.Default.DownloadTimeoutTime * 1000;
+					_tcpClient.ReceiveTimeout = Settings.Default.DownloadTimeoutTime * 1000;
 					_log.Info("StartRun() connected");
 
 					using (Stream stream = new ThrottledStream(_tcpClient.GetStream(), Settings.Default.MaxDownloadSpeedInKB * 1000))
@@ -167,12 +181,87 @@ namespace XG.Plugin.Irc
 				finally
 				{
 					_log.Info("StartRun() finishing");
+					PassiveDcc.Release(Passive);
 					FinishWriting();
 
 					_tcpClient = null;
 					_writer = null;
 				}
 			}
+		}
+
+		const int RefusedConnectAttempts = 3;
+
+		/// <summary>
+		/// Connects to the bot. A refused connection is tried again a few times, some bots open
+		/// their port a moment after sending the offer. Returns null if it does not work.
+		/// </summary>
+		TcpClient ConnectToBot()
+		{
+			for (int attempt = 1; attempt <= RefusedConnectAttempts && AllowRunning; attempt++)
+			{
+				var client = new TcpClient();
+				try
+				{
+					client.Connect(IP, Port);
+					return client;
+				}
+				catch (SocketException ex)
+				{
+					client.Close();
+					_log.Warn("ConnectToBot() " + IP + ":" + Port + " attempt " + attempt + " failed: " + ex.Message);
+					if (ex.SocketErrorCode != SocketError.ConnectionRefused)
+					{
+						break;
+					}
+					Thread.Sleep(1000);
+				}
+				catch (Exception ex)
+				{
+					client.Close();
+					_log.Error("ConnectToBot() " + IP + ":" + Port, ex);
+					break;
+				}
+			}
+			return null;
+		}
+
+		/// <summary>
+		/// Waits for the bot to connect to the passive port. Connections from other addresses are
+		/// refused when the bot told its address. Returns null if the bot did not connect in time.
+		/// </summary>
+		TcpClient AcceptFromBot()
+		{
+			var listener = Passive.Listener;
+			bool checkAddress = IP != null && !IP.Equals(IPAddress.Any) && !IP.Equals(IPAddress.None);
+			DateTime until = DateTime.Now.AddSeconds(PassiveDcc.AcceptTimeoutSeconds);
+			try
+			{
+				while (AllowRunning && !Passive.Stopped && DateTime.Now < until)
+				{
+					if (!listener.Pending())
+					{
+						Thread.Sleep(100);
+						continue;
+					}
+					var client = listener.AcceptTcpClient();
+					var remote = ((IPEndPoint) client.Client.RemoteEndPoint).Address;
+					if (checkAddress && !remote.Equals(IP) && !(remote.IsIPv4MappedToIPv6 && remote.MapToIPv4().Equals(IP)))
+					{
+						_log.Warn("AcceptFromBot() refusing a connection from " + remote + ", waiting for " + IP);
+						client.Close();
+						continue;
+					}
+					_log.Info("AcceptFromBot() " + remote + " connected to port " + Passive.ListenPort);
+					return client;
+				}
+			}
+			catch (Exception ex)
+			{
+				_log.Error("AcceptFromBot() port " + Passive.ListenPort, ex);
+			}
+			_log.Error("AcceptFromBot() the bot did not connect to port " + Passive.ListenPort + " (is the port forwarded to XG?)");
+			return null;
 		}
 
 		protected override void StopRun()
@@ -226,6 +315,19 @@ namespace XG.Plugin.Irc
 			try
 			{
 				var stream = new FileStream(Settings.Default.TempPath + File.TmpName, FileMode.OpenOrCreate, FileAccess.ReadWrite);
+
+				// resuming behind the end of the part would leave a gap of zeros in the file
+				if (StartSize > stream.Length)
+				{
+					_log.Error("InitializeWriting(" + Packet + ") cant resume at " + StartSize + ", the part has only " + stream.Length + " bytes");
+					File.CurrentSize = stream.Length;
+					stream.Close();
+					_tcpClient.Close();
+					return;
+				}
+				// everything from StartSize on is written again, so it must not be counted twice;
+				// otherwise the size reaches the end too early and a broken download is finished as complete
+				File.CurrentSize = StartSize;
 
 				// we are connected
 				if (OnConnected != null)
@@ -338,13 +440,16 @@ namespace XG.Plugin.Irc
 					// it did not start
 					else if (_receivedBytes == 0)
 					{
-						_log.Error("FinishWriting(" + Packet + ") downloading did not start, disabling packet");
-						Packet.Enabled = false;
+						// a failed rollback check disabled the packet already and has its own notification
+						if (Packet.Enabled)
+						{
+							// connected, but the bot sent nothing; the plugin retries or disables the packet, like a refused connection
+							_log.Error("FinishWriting(" + Packet + ") downloading did not start");
+							ConnectFailed = true;
 
-						Packet.Parent.HasNetworkProblems = true;
-						Packet.Parent.Commit();
-
-						FireNotificationAdded(Notification.Types.BotConnectFailed, Packet);
+							Packet.Parent.HasNetworkProblems = true;
+							Packet.Parent.Commit();
+						}
 					}
 					// it is incomplete
 					else
@@ -358,14 +463,12 @@ namespace XG.Plugin.Irc
 			// the connection didnt even connected to the given ip and port
 			else
 			{
-				// lets disable the packet, because the bot seems to have broken config or is firewalled
-				_log.Error("FinishWriting(" + Packet + ") connection did not work, disabling packet");
-				Packet.Enabled = false;
+				// the bot seems to have a broken config or is firewalled; the plugin retries or disables the packet
+				_log.Error("FinishWriting(" + Packet + ") connection did not work");
+				ConnectFailed = true;
 
 				Packet.Parent.HasNetworkProblems = true;
 				Packet.Parent.Commit();
-
-				FireNotificationAdded(Notification.Types.BotConnectFailed, Packet);
 			}
 
 			if (OnDisconnected != null)

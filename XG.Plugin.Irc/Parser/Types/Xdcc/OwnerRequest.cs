@@ -47,7 +47,7 @@ namespace XG.Plugin.Irc.Parser.Types.Xdcc
 				int valueInt;
 				if (int.TryParse(match.Groups["time"].ToString(), out valueInt))
 				{
-					FireQueueRequestFromBot(this, new EventArgs<Bot, int>(aBot, (valueInt * 60 + 1) * 1000));
+					FireQueueRequestFromBot(this, new EventArgs<Bot, int>(aBot, valueInt * 60 + 1));
 				}
 			}
 			return match.Success;

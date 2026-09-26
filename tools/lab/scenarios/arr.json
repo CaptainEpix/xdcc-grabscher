@@ -1,0 +1,19 @@
+{
+  "port": 16667,
+  "channel": "#lab",
+  "announce_every": 20,
+  "bots": [
+    { "nick": "LAB-GOOD", "mode": "good", "ports": [40001, 40002, 40003],
+      "packs": [ { "id": 1, "name": "Good.Show.S01E01.720p.mkv", "size": 3145728 } ] },
+    { "nick": "LAB-FLAKY", "mode": "flaky", "ports": [42001, 42002], "open_ports": [42002], "port_sequence": [42001, 42002],
+      "packs": [ { "id": 1, "name": "Flaky.Movie.2014.1080p.mkv", "size": 4194304 } ] },
+    { "nick": "LAB-REFUSE", "mode": "refuse", "ports": [41001],
+      "packs": [ { "id": 1, "name": "Refuse.Show.S01E01.720p.mkv", "size": 3145728 } ] },
+    { "nick": "LAB-MUTE", "mode": "good", "ports": [45001], "cut_after": [0, 0],
+      "packs": [ { "id": 1, "name": "Mute.Show.S01E01.720p.mkv", "size": 3145728 } ] },
+    { "nick": "LAB-PASSIVE", "mode": "passive",
+      "packs": [ { "id": 1, "name": "Passive.Show.S01E01.720p.mkv", "size": 3145728 } ] },
+    { "nick": "LAB-SILENT", "mode": "silent",
+      "packs": [ { "id": 1, "name": "Silent.Show.S01E01.720p.mkv", "size": 3145728 } ] }
+  ]
+}

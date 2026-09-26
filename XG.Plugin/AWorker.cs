@@ -52,6 +52,23 @@ namespace XG.Plugin
 
 		#region FUNCTIONS
 
+		// an unhandled exception in any thread ends the whole process under Mono
+		void RunSafely()
+		{
+			try
+			{
+				StartRun();
+			}
+			catch (ThreadAbortException)
+			{
+				// this is ok
+			}
+			catch (Exception ex)
+			{
+				Log.Fatal("StartRun() " + Thread.CurrentThread.Name, ex);
+			}
+		}
+
 		public void Start(string aName, bool aNewThread = true)
 		{
 			_allowRunning = true;
@@ -59,7 +76,7 @@ namespace XG.Plugin
 			{
 				if (aNewThread)
 				{
-					var thread = new Thread(StartRun);
+					var thread = new Thread(RunSafely);
 					thread.Name = aName;
 					thread.Start();
 				}

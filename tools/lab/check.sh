@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# End-to-end check of a lab build through the Newznab and SABnzbd APIs, the way
+# Prowlarr/Sonarr/Radarr use them, against a good, a flaky and a refusing bot,
+# one that accepts the connection but sends nothing twice, a passive DCC bot
+# and a bot that never answers.
+#
+#   tools/lab/check.sh <xg build dir>
+#
+# Expected: good, flaky, mute and passive downloads complete, the refusing and
+# the silent bot fail cleanly,
+# and grabbing the good release again completes quickly under a new name.
+set -euo pipefail
+XG="$1"
+LAB="$(cd "$(dirname "$0")" && pwd)"
+STATE="$(mktemp -d)"
+K="0b1f5e2a-6c3d-4e7f-9a8b-1c2d3e4f5a6b"
+# fail jobs of silent bots after 30s instead of 15 minutes
+export XG_COMPAT_SILENT_BOT_SECONDS=30
+# tv downloads get their own folder, movies stay in the download folder
+export XG_CATEGORY_FOLDERS=tv
+U="http://127.0.0.1:15556"
+export NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
+trap '"$LAB/stop.sh" "$STATE"' EXIT
+
+ready() {
+	for i in $(seq 1 30); do
+		curl -sS -m 2 -o /dev/null "$U/sabnzbd/api?mode=version" 2>/dev/null && return 0
+		sleep 1
+	done
+	return 1
+}
+"$LAB/run.sh" "$XG" "$LAB/scenarios/arr.json" "$STATE" >/dev/null
+if ! ready; then
+	# the first start can crash creating xgsnapshots.db, the second works
+	"$LAB/stop.sh" "$STATE"; "$LAB/run.sh" "$XG" "$LAB/scenarios/arr.json" "$STATE" >/dev/null
+	ready || { echo "FAIL: XG did not start"; tail -20 "$STATE/xg.log"; exit 1; }
+fi
+sleep 5
+
+grab() {
+	local link
+	link=$(curl -sS "$U/newznab/api?t=search&q=$1&apikey=$K" | grep -o '<link>[^<]*t=get[^<]*' | head -1 | sed 's/<link>//; s/&amp;/\&/g' || true)
+	[[ -n "$link" ]] || { echo "FAIL: no search result for $1"; exit 1; }
+	curl -sS -o "$STATE/grab.nzb" "$link"
+	curl -sS -F "name=@$STATE/grab.nzb" "$U/sabnzbd/api?mode=addfile&cat=$2&apikey=$K&output=json" | grep -q '"status":true' || { echo "FAIL: addfile $1"; exit 1; }
+}
+grab "good%20show" tv
+grab "flaky%20movie" movies
+grab "refuse%20show" tv
+grab "mute%20show" tv
+grab "passive%20show" tv
+grab "silent%20show" tv
+
+for i in $(seq 1 40); do
+	sleep 3
+	history=$(curl -sS "$U/sabnzbd/api?mode=history&apikey=$K")
+	[[ $(grep -o '"status":"\(Completed\|Failed\)"' <<<"$history" | wc -l) -ge 6 ]] && break
+done
+
+python3 - "$history" <<'PY'
+import json, sys
+slots = {s["name"]: s for s in json.loads(sys.argv[1])["history"]["slots"]}
+expected = {
+    "Good.Show.S01E01.720p.mkv": "Completed",
+    "Flaky.Movie.2014.1080p.mkv": "Completed",
+    "Refuse.Show.S01E01.720p.mkv": "Failed",
+    "Mute.Show.S01E01.720p.mkv": "Completed",
+    "Passive.Show.S01E01.720p.mkv": "Completed",
+    "Silent.Show.S01E01.720p.mkv": "Failed",
+}
+ok = True
+for name, status in expected.items():
+    got = slots.get(name, {}).get("status", "missing")
+    print(("ok   " if got == status else "FAIL ") + name + ": " + got + " (expected " + status + ")")
+    ok = ok and got == status
+for name, folder in (("Good.Show.S01E01.720p.mkv", "/dl/tv/"), ("Flaky.Movie.2014.1080p.mkv", "/dl/")):
+    storage = slots.get(name, {}).get("storage", "")
+    good = storage.endswith(folder + name)
+    print(("ok   " if good else "FAIL ") + name + " stored in " + folder + ": " + storage)
+    ok = ok and good
+sys.exit(0 if ok else 1)
+PY
+
+# grabbing the same release again must not wait for the old request timer
+# and must not replace the first file
+grab "good%20show" tv
+for i in $(seq 1 15); do
+	sleep 3
+	history=$(curl -sS "$U/sabnzbd/api?mode=history&apikey=$K")
+	[[ $(grep -o '"status":"\(Completed\|Failed\)"' <<<"$history" | wc -l) -ge 7 ]] && break
+done
+python3 - "$history" <<'PY'
+import json, sys
+paths = sorted(s["storage"] for s in json.loads(sys.argv[1])["history"]["slots"]
+               if s["name"] == "Good.Show.S01E01.720p.mkv" and s["status"] == "Completed")
+ok = len(paths) == 2 and paths[0].endswith("Good.Show.S01E01.720p (1).mkv")
+print(("ok   " if ok else "FAIL ") + "second grab of Good.Show.S01E01.720p.mkv: " + ", ".join(paths))
+sys.exit(0 if ok else 1)
+PY
+
+# every IRC message must be handled once; a second copy of an offer shows up as this
+if grep -q "is already connected" "$STATE/xg.log"; then
+	echo "FAIL a DCC offer was handled twice:"
+	grep "is already connected" "$STATE/xg.log" | head -3
+	exit 1
+fi
+echo "ok   every DCC offer was handled once"

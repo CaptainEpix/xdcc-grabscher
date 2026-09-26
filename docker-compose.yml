@@ -1,7 +1,7 @@
 services:
   xg:
     build: .
-    image: xdcc-grabscher:3.3.2.0
+    image: xdcc-grabscher:3.3.3.0
     container_name: xdcc-grabscher
     restart: unless-stopped
     ports:

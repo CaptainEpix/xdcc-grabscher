@@ -159,118 +159,114 @@ namespace XG.Plugin.Irc
 
 		void ClientOnBan(object sender, BanEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.Ban, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.Ban, Event = e });
 		}
 
 		void ClientOnChannelMessage(object sender, IrcEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.ChannelMessage, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.ChannelMessage, Event = e });
 		}
 
 		void ClientOnConnected(object sender, EventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.Connected, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.Connected, Event = e });
 		}
 
 		void ClientOnCtcpReply(object sender, CtcpEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.CtcpReply, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.CtcpReply, Event = e });
 		}
 
 		void ClientOnCtcpRequest(object sender, CtcpEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.CtcpRequest, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.CtcpRequest, Event = e });
 		}
 
 		void ClientOnErrorMessage(object sender, IrcEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.ErrorMessage, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.ErrorMessage, Event = e });
 		}
 
 		void ClientOnJoin(object sender, JoinEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.Join, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.Join, Event = e });
 		}
 
 		void ClientOnKick(object sender, KickEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.Kick, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.Kick, Event = e });
 		}
 
 		void ClientOnPart(object sender, PartEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.Part, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.Part, Event = e });
 		}
 
 		void ClientOnNames(object sender, NamesEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.Names, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.Names, Event = e });
 		}
 
 		void ClientOnNickChange(object sender, NickChangeEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.NickChange, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.NickChange, Event = e });
 		}
 
 		void ClientOnQueryMessage(object sender, IrcEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.QueryMessage, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.QueryMessage, Event = e });
 		}
 
 		void ClientOnQueryNotice(object sender, IrcEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.QueryNotice, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.QueryNotice, Event = e });
 		}
 
 		void ClientOnQuit(object sender, QuitEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.Quit, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.Quit, Event = e });
 		}
 
 		void ClientOnReadLine(object sender, ReadLineEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.ReadLine, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.ReadLine, Event = e });
 		}
 
 		void ClientOnTopic(object sender, TopicEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.Topic, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.Topic, Event = e });
 		}
 
 		void ClientOnTopicChange(object sender, TopicChangeEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.TopicChange, Event = e });
-			_waitHandle.Set();
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.TopicChange, Event = e });
 		}
 
 		void ClientOnUnBan(object sender, UnbanEventArgs e)
 		{
-			_events.Enqueue(new IrcEvent { Type = IrcEvent.EventType.UnBan, Event = e });
+			AddEvent(new IrcEvent { Type = IrcEvent.EventType.UnBan, Event = e });
+		}
+
+		// events arrive on the reader thread of the IRC client and are handled on the event thread
+		void AddEvent(IrcEvent aEvent)
+		{
+			lock (_events)
+			{
+				_events.Enqueue(aEvent);
+			}
 			_waitHandle.Set();
 		}
 
 		protected void EventThread()
 		{
-			IrcEvent tEvent = null;
 			while (true)
 			{
-				if (_events.Count == 0)
+				int count;
+				lock (_events)
+				{
+					count = _events.Count;
+				}
+				if (count == 0)
 				{
 					_waitHandle.WaitOne();
 				}
@@ -279,73 +275,86 @@ namespace XG.Plugin.Irc
 					break;
 				}
 
-				try
+				// the wait handle can be signalled while the queue is already empty;
+				// never fall back to the previous event, that would handle it twice
+				IrcEvent tEvent = null;
+				lock (_events)
 				{
-					tEvent = _events.Dequeue();
+					if (_events.Count > 0)
+					{
+						tEvent = _events.Dequeue();
+					}
 				}
-				catch (Exception) {}
 				if (tEvent == null)
 				{
 					continue;
 				}
 
-				// run
-				switch (tEvent.Type)
+				// one bad event must not stop the thread, XG would not hear anything from IRC anymore
+				try
 				{
-					case IrcEvent.EventType.Ban:
-						ClientBan((BanEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.ChannelMessage:
-						ClientChannelMessage((IrcEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Connected:
-						ClientConnected(tEvent.Event);
-						break;
-					case IrcEvent.EventType.CtcpReply:
-						MessageReceived((CtcpEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.CtcpRequest:
-						MessageReceived((CtcpEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.ErrorMessage:
-						ClientErrorMessage((IrcEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Join:
-						ClientJoin((JoinEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Kick:
-						ClientKick((KickEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Part:
-						ClientPart((PartEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Names:
-						ClientNames((NamesEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.NickChange:
-						ClienNickChange((NickChangeEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.QueryMessage:
-						MessageReceived((IrcEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.QueryNotice:
-						MessageReceived((IrcEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.Quit:
-						ClientQuit((QuitEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.ReadLine:
-						OnReadLine(this, new EventArgs<string>(((ReadLineEventArgs) tEvent.Event).Line));
-						break;
-					case IrcEvent.EventType.Topic:
-						ClientTopic((TopicEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.TopicChange:
-						ClientTopicChange((TopicChangeEventArgs) tEvent.Event);
-						break;
-					case IrcEvent.EventType.UnBan:
-						ClientUnBan((UnbanEventArgs) tEvent.Event);
-						break;
+					// run
+					switch (tEvent.Type)
+					{
+						case IrcEvent.EventType.Ban:
+							ClientBan((BanEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.ChannelMessage:
+							ClientChannelMessage((IrcEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Connected:
+							ClientConnected(tEvent.Event);
+							break;
+						case IrcEvent.EventType.CtcpReply:
+							MessageReceived((CtcpEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.CtcpRequest:
+							MessageReceived((CtcpEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.ErrorMessage:
+							ClientErrorMessage((IrcEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Join:
+							ClientJoin((JoinEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Kick:
+							ClientKick((KickEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Part:
+							ClientPart((PartEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Names:
+							ClientNames((NamesEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.NickChange:
+							ClienNickChange((NickChangeEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.QueryMessage:
+							MessageReceived((IrcEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.QueryNotice:
+							MessageReceived((IrcEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.Quit:
+							ClientQuit((QuitEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.ReadLine:
+							OnReadLine(this, new EventArgs<string>(((ReadLineEventArgs) tEvent.Event).Line));
+							break;
+						case IrcEvent.EventType.Topic:
+							ClientTopic((TopicEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.TopicChange:
+							ClientTopicChange((TopicChangeEventArgs) tEvent.Event);
+							break;
+						case IrcEvent.EventType.UnBan:
+							ClientUnBan((UnbanEventArgs) tEvent.Event);
+							break;
+					}
+				}
+				catch (Exception ex)
+				{
+					_log.Fatal("EventThread() " + tEvent.Type, ex);
 				}
 			}
 		}
@@ -859,6 +868,15 @@ namespace XG.Plugin.Irc
 			try
 			{
 				_client.SendMessage(SendType.Message, aPacket.Parent.Name, "XDCC SEND " + aPacket.Id);
+			}
+			catch (NotConnectedException) {}
+		}
+
+		public void XdccCancel(Bot aBot)
+		{
+			try
+			{
+				_client.SendMessage(SendType.Message, aBot.Name, "XDCC CANCEL");
 			}
 			catch (NotConnectedException) {}
 		}

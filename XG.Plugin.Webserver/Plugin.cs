@@ -24,12 +24,19 @@
 //  
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Owin.Hosting;
 using Nowin;
 using SharpRobin.Core;
+using XG.Business.Helper;
 using XG.Config.Properties;
+using XG.Extensions;
+using XG.Model.Domain;
+using XG.Plugin.Webserver.Compat;
+using XG.Plugin.Webserver.Compat.Sabnzbd;
 
 namespace XG.Plugin.Webserver
 {
@@ -39,6 +46,10 @@ namespace XG.Plugin.Webserver
 
 		IDisposable _server;
 		SignalR.EventForwarder _eventForwarder;
+		CompatJobTracker _compatJobTracker;
+		System.Threading.Timer _silentBotTimer;
+
+		static readonly log4net.ILog Log = log4net.LogManager.GetLogger(typeof(Plugin));
 
 		public RrdDb RrdDB { get; set; }
 
@@ -69,6 +80,8 @@ namespace XG.Plugin.Webserver
 		{
 			Search.Packets.Servers = Servers;
 			Search.Packets.Initialize();
+
+			StartCompat();
 
 			AddRepeatingJob(typeof(Job.SearchUpdater), "SearchUpdater", "WebserverPlugin", Settings.Default.TakeSnapshotTimeInMinutes * 60,
 				new JobItem("Searches", Searches));
@@ -116,6 +129,113 @@ namespace XG.Plugin.Webserver
 			Nancy.Helper.OnShutdown -= FireShutdown;
 			_eventForwarder.Stop();
 			_server.Dispose();
+			StopCompat();
+		}
+
+		#endregion
+
+		#region COMPATIBILITY APIS
+
+		void StartCompat()
+		{
+			CompatApiKeys.ApiKeys = ApiKeys;
+
+			_compatJobTracker = new CompatJobTracker(
+				new CompatJobStore(Settings.Default.GetAppDataPath() + "arr-jobs.json"),
+				Search.Packets.GetPacket,
+				() => Settings.Default.ReadyPath);
+
+			// XG_COMPAT_SILENT_BOT_SECONDS changes how long a silent bot is waited for
+			int seconds;
+			if (int.TryParse(Environment.GetEnvironmentVariable("XG_COMPAT_SILENT_BOT_SECONDS"), out seconds) && seconds > 0)
+			{
+				_compatJobTracker.SilentBotTimeout = TimeSpan.FromSeconds(seconds);
+			}
+
+			// XG_CATEGORY_FOLDERS: "all" or a list of categories whose downloads get their own folder
+			_compatJobTracker.ConfigureCategoryFolders(Environment.GetEnvironmentVariable("XG_CATEGORY_FOLDERS"));
+			FileActions.ReadyFolderResolver = _compatJobTracker.ReadyFolder;
+
+			FileActions.OnFileFinishing += FileFinishing;
+			FileActions.OnFileFinished += FileFinished;
+			_compatJobTracker.Start();
+
+			var interval = TimeSpan.FromSeconds(Math.Max(5, Math.Min(60, _compatJobTracker.SilentBotTimeout.TotalSeconds / 4)));
+			_silentBotTimer = new System.Threading.Timer(CheckSilentBots, null, interval, interval);
+
+			Nancy.Compat.SabnzbdModule.Handler = new SabnzbdHandler(_compatJobTracker, CompatApiKeys.IsValid, () => Settings.Default.ReadyPath);
+		}
+
+		void StopCompat()
+		{
+			Nancy.Compat.SabnzbdModule.Handler = null;
+			if (_silentBotTimer != null)
+			{
+				_silentBotTimer.Dispose();
+				_silentBotTimer = null;
+			}
+			FileActions.OnFileFinishing -= FileFinishing;
+			FileActions.OnFileFinished -= FileFinished;
+			FileActions.ReadyFolderResolver = null;
+		}
+
+		void CheckSilentBots(object aState)
+		{
+			try
+			{
+				_compatJobTracker.CheckSilentBots(DateTime.UtcNow);
+			}
+			catch (Exception ex)
+			{
+				Log.Error("CheckSilentBots()", ex);
+			}
+		}
+
+		void FileFinishing(object aSender, EventArgs<File, Packet[]> aEventArgs)
+		{
+			_compatJobTracker.FileFinishing(aEventArgs.Value1, aEventArgs.Value2);
+		}
+
+		void FileFinished(object aSender, EventArgs<File, Packet[], string, bool> aEventArgs)
+		{
+			_compatJobTracker.FileFinished(aEventArgs.Value1, aEventArgs.Value2, aEventArgs.Value3, aEventArgs.Value4);
+		}
+
+		protected override void ObjectEnabledChanged(object aSender, EventArgs<AObject> aEventArgs)
+		{
+			var packet = aEventArgs.Value1 as Packet;
+			if (packet != null && _compatJobTracker != null)
+			{
+				_compatJobTracker.PacketEnabledChanged(packet);
+			}
+		}
+
+		protected override void ObjectRemoved(object aSender, EventArgs<AObject, AObject> aEventArgs)
+		{
+			if (_compatJobTracker == null)
+			{
+				return;
+			}
+			// removing a bot, channel or server removes its packets without separate events
+			foreach (var packet in PacketsOf(aEventArgs.Value2))
+			{
+				_compatJobTracker.PacketRemoved(packet);
+			}
+		}
+
+		static IEnumerable<Packet> PacketsOf(AObject aObject)
+		{
+			var packet = aObject as Packet;
+			if (packet != null)
+			{
+				return new[] { packet };
+			}
+			var objects = aObject as AObjects;
+			if (objects != null)
+			{
+				return objects.Children.SelectMany(PacketsOf).ToArray();
+			}
+			return new Packet[0];
 		}
 
 		#endregion

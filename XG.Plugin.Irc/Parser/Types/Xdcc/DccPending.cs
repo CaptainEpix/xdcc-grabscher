@@ -47,7 +47,7 @@ namespace XG.Plugin.Irc.Parser.Types.Xdcc
 					{
 						aBot.State = Bot.States.Idle;
 					}
-					FireQueueRequestFromBot(this, new EventArgs<Bot, int>(aBot, (valueInt + 2) * 1000));
+					FireQueueRequestFromBot(this, new EventArgs<Bot, int>(aBot, valueInt + 2));
 				}
 			}
 			return match.Success;

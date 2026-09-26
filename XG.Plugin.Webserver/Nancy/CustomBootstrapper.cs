@@ -31,6 +31,7 @@ using Nancy;
 using Nancy.Bootstrapper;
 using Nancy.Conventions;
 using Nancy.Responses;
+using Nancy.Serialization.JsonNet;
 using Nancy.TinyIoc;
 using XG.Config.Properties;
 using XG.Plugin.Webserver.Nancy.Authentication;
@@ -45,6 +46,23 @@ namespace XG.Plugin.Webserver.Nancy
 		protected override byte[] FavIcon
 		{
 			get { return _favicon?? (_favicon = LoadFavIcon()); }
+		}
+
+		// The api models hide their XG domain objects with [JsonIgnore]. Only the Json.NET
+		// serializer honours that; Nancy's built-in serializer walks into the domain objects,
+		// hits their parent/child cycle after the headers were sent and the request hangs.
+		// Referencing the serializer here also makes sure its assembly is deployed.
+		protected override NancyInternalConfiguration InternalConfiguration
+		{
+			get
+			{
+				return NancyInternalConfiguration.WithOverrides(c =>
+				{
+					// Nancy also discovers it by scanning, it must only be listed once
+					c.Serializers.Remove(typeof(JsonNetSerializer));
+					c.Serializers.Insert(0, typeof(JsonNetSerializer));
+				});
+			}
 		}
 
 		protected override void ApplicationStartup(TinyIoCContainer container, IPipelines pipelines)

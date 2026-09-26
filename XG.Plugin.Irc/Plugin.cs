@@ -44,9 +44,16 @@ namespace XG.Plugin.Irc
 
 		readonly HashSet<IrcConnection> _connections = new HashSet<IrcConnection>();
 		readonly HashSet<BotDownload> _botDownloads = new HashSet<BotDownload>();
+
+		// failed DCC connections per packet; some bots only accept connections on part of their ports
+		readonly Dictionary<Guid, int> _connectFailures = new Dictionary<Guid, int>();
+		public const int MaxConnectAttempts = 3;
 		readonly HashSet<Download> _xdccListDownloads = new HashSet<Download>();
 
 		readonly Parser.Parser _parser = new Parser.Parser();
+
+		// bots whose offer came while every download slot or passive port was taken, oldest first
+		readonly List<Bot> _waitingForSlot = new List<Bot>();
 
 		#endregion
 
@@ -55,10 +62,13 @@ namespace XG.Plugin.Irc
 		protected override void StartRun()
 		{
 			_parser.OnAddDownload += BotConnect;
+			_parser.OnNoFreeSlot += (aSender, aEventArgs) => WaitForSlot(aEventArgs.Value1);
 			_parser.OnDownloadXdccList += DownloadXdccList;
 			_parser.OnNotificationAdded += AddNotification;
 			_parser.OnRemoveDownload += (aSender, aEventArgs) => BotDisconnect(aEventArgs.Value1);
 			_parser.Initialize();
+			// know the public address before the first passive offer arrives
+			PassiveDcc.Prepare();
 
 			foreach (Server server in Servers.All)
 			{
@@ -112,6 +122,16 @@ namespace XG.Plugin.Irc
 
 		protected override void ObjectEnabledChanged(object aSender, EventArgs<AObject> aEventArgs)
 		{
+			// a newly enabled packet gets all connection attempts again
+			var packet = aEventArgs.Value1 as Packet;
+			if (packet != null && packet.Enabled)
+			{
+				lock (_connectFailures)
+				{
+					_connectFailures.Remove(packet.Guid);
+				}
+			}
+
 			if (aEventArgs.Value1 is Server)
 			{
 				var aServer = aEventArgs.Value1 as Server;
@@ -225,10 +245,15 @@ namespace XG.Plugin.Irc
 
 		void BotConnect(object aSender, EventArgs<Packet, Int64, IPAddress, int> aEventArgs)
 		{
+			// the listening port of a passive offer, reserved by the parser
+			var passive = PassiveDcc.Claim(aEventArgs.Value1.Guid);
+
 			int currentDownloadCount = (from file in Files.All where file.Connected select file).Count();
 			if (Settings.Default.MaxDownloads > 0 && currentDownloadCount >= Settings.Default.MaxDownloads)
 			{
 				_log.Error("BotConnect(" + aEventArgs.Value1 + ") skipping, because already " + Settings.Default.MaxDownloads + " packets are downloading");
+				PassiveDcc.Release(passive);
+				WaitForSlot(aEventArgs.Value1.Parent);
 
 				IrcConnection connection = _connections.SingleOrDefault(c => c.Server == aEventArgs.Value1.Parent.Parent.Parent);
 				if (connection != null)
@@ -248,6 +273,7 @@ namespace XG.Plugin.Irc
 					StartSize = aEventArgs.Value2,
 					IP = aEventArgs.Value3,
 					Port = aEventArgs.Value4,
+					Passive = passive,
 					MaxData = aEventArgs.Value1.RealSize - aEventArgs.Value2,
 					Scheduler = Scheduler
 				};
@@ -262,6 +288,48 @@ namespace XG.Plugin.Irc
 			{
 				// uhh - that should not happen
 				_log.Error("BotConnect(" + aEventArgs.Value1 + ") is already downloading");
+				PassiveDcc.Release(passive);
+			}
+		}
+
+		void WaitForSlot(Bot aBot)
+		{
+			lock (_waitingForSlot)
+			{
+				if (!_waitingForSlot.Contains(aBot))
+				{
+					_log.Info("WaitForSlot(" + aBot + ") asking again when a download is finished");
+					_waitingForSlot.Add(aBot);
+				}
+			}
+		}
+
+		/// <summary>
+		/// A download ended, so its slot (and its passive port) is free: ask the bots which had to wait,
+		/// instead of letting them wait for the long "no answer" timer of their request.
+		/// </summary>
+		void WakeWaitingBots()
+		{
+			int free = Settings.Default.MaxDownloads > 0
+				? Settings.Default.MaxDownloads - (from file in Files.All where file.Connected select file).Count()
+				: int.MaxValue;
+			var wake = new List<Bot>();
+			lock (_waitingForSlot)
+			{
+				while (free-- > 0 && _waitingForSlot.Count > 0)
+				{
+					wake.Add(_waitingForSlot[0]);
+					_waitingForSlot.RemoveAt(0);
+				}
+			}
+			foreach (var bot in wake)
+			{
+				var connection = _connections.SingleOrDefault(c => c.Server == bot.Parent.Parent);
+				if (connection != null)
+				{
+					_log.Info("WakeWaitingBots() asking " + bot + " again");
+					connection.RescheduleBot(bot, 2);
+				}
 			}
 		}
 
@@ -309,10 +377,23 @@ namespace XG.Plugin.Irc
 				try
 				{
 					IrcConnection connection = _connections.SingleOrDefault(c => c.Server == aEventArgs.Value1.Parent.Parent.Parent);
+					if (download.ConnectFailed)
+					{
+						ConnectFailed(aEventArgs.Value1, connection);
+					}
+					else
+					{
+						lock (_connectFailures)
+						{
+							_connectFailures.Remove(aEventArgs.Value1.Guid);
+						}
+					}
 					if (connection != null)
 					{
-						connection.AddBotToQueue(aEventArgs.Value1.Parent, Settings.Default.CommandWaitTime);
+						// the bot answered, so the "no answer" timer of the request is obsolete and would delay the next packet up to BotWaitTime
+						connection.RescheduleBot(aEventArgs.Value1.Parent, Settings.Default.CommandWaitTime);
 					}
+					WakeWaitingBots();
 				}
 				catch (Exception ex)
 				{
@@ -327,6 +408,13 @@ namespace XG.Plugin.Irc
 
 		void DownloadXdccList(object aSender, EventArgs<Server, string, Int64, IPAddress, int> aEventArgs)
 		{
+			var connection = _connections.SingleOrDefault(c => c.Server == aEventArgs.Value1);
+			if (connection == null || !connection.AskedForXdccList(aEventArgs.Value2))
+			{
+				_log.Warn("DownloadXdccList(" + aEventArgs.Value2 + ") ignoring a pack list XG did not ask for, from " + aEventArgs.Value4 + ":" + aEventArgs.Value5);
+				return;
+			}
+
 			var download = _xdccListDownloads.SingleOrDefault(c => c.Bot == aEventArgs.Value2);
 			if (download == null)
 			{
@@ -396,6 +484,49 @@ namespace XG.Plugin.Irc
 			foreach (var connection in _connections.ToArray())
 			{
 				connection.TriggerTimerRun();
+			}
+		}
+
+		/// <summary>
+		/// The bot offered a port that could not be connected. Bots keep such an offer pending
+		/// and re-send it when asked again, so cancel it; the next request gets a new port.
+		/// Only after several failed attempts the packet is given up.
+		/// </summary>
+		void ConnectFailed(Packet aPacket, IrcConnection aConnection)
+		{
+			int failures;
+			lock (_connectFailures)
+			{
+				_connectFailures.TryGetValue(aPacket.Guid, out failures);
+				failures++;
+				if (failures < MaxConnectAttempts)
+				{
+					_connectFailures[aPacket.Guid] = failures;
+				}
+				else
+				{
+					_connectFailures.Remove(aPacket.Guid);
+				}
+			}
+
+			if (aConnection != null)
+			{
+				aConnection.CancelOffer(aPacket.Parent);
+				// ask again (or for the bot's next packet) soon, instead of waiting for the
+				// long "did the bot hear us" timer of the original request
+				aConnection.RescheduleBot(aPacket.Parent, Settings.Default.CommandWaitTime);
+			}
+
+			if (failures < MaxConnectAttempts)
+			{
+				_log.Warn("ConnectFailed(" + aPacket + ") attempt " + failures + " of " + MaxConnectAttempts + " failed, requesting again");
+			}
+			else
+			{
+				_log.Error("ConnectFailed(" + aPacket + ") attempt " + failures + " of " + MaxConnectAttempts + " failed, disabling packet");
+				aPacket.Enabled = false;
+				aPacket.Commit();
+				AddNotification(this, new EventArgs<Notification>(new Notification(Notification.Types.BotConnectFailed, aPacket)));
 			}
 		}
 

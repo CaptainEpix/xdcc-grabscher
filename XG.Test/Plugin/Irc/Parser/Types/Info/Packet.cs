@@ -62,5 +62,44 @@ namespace XG.Test.Plugin.Irc.Parser.Types.Info
 			Assert.AreEqual((Int64) (2.2 * 1024 * 1024 * 1024), tPack.Size);
 			Assert.AreEqual("Payback.Heute.ist.Zahltag.2011.German.DL.1080p.BluRay.x264-LeechOurStuff.mkv", tPack.Name);
 		}
+
+		[Test]
+		public void NonAsciiNamesTest()
+		{
+			var parser = new XG.Plugin.Irc.Parser.Types.Info.Packet();
+
+			Parse(parser, "#40   0x [1.0M] Café.Déjà.Vu.S01E02.720p.mkv");
+			Assert.AreEqual("Café.Déjà.Vu.S01E02.720p.mkv", Bot.Packet(40).Name);
+
+			Parse(parser, "#41   0x [1.0M] It's.Someone's.Show.S01E03.720p.mkv");
+			Assert.AreEqual("It's.Someone's.Show.S01E03.720p.mkv", Bot.Packet(41).Name);
+
+			Parse(parser, "#42   0x [1.0M] Die.Brücke.am.Fluß.2021.German.1080p.mkv");
+			Assert.AreEqual("Die.Brücke.am.Fluß.2021.German.1080p.mkv", Bot.Packet(42).Name);
+
+			// file system characters still go
+			Parse(parser, "#43   0x [1.0M] What?.Why\\Not/Now*.mkv");
+			Assert.AreEqual("What.WhyNotNow.mkv", Bot.Packet(43).Name);
+		}
+
+		[Test]
+		public void OldStrippedNameIsTheSameFileTest()
+		{
+			var parser = new XG.Plugin.Irc.Parser.Types.Info.Packet();
+			// how older versions stored the name
+			Parse(parser, "#44   0x [1.0M] Caf.Dj.Vu.S01E04.720p.mkv");
+			var packet = Bot.Packet(44);
+			packet.Enabled = true;
+			packet.LastUpdated = new DateTime(2026, 1, 1);
+
+			Parse(parser, "#44   0x [1.0M] Café.Déjà.Vu.S01E04.720p.mkv");
+			Assert.AreEqual("Café.Déjà.Vu.S01E04.720p.mkv", packet.Name);
+			Assert.IsTrue(packet.Enabled, "a queued download must not be cancelled by the new spelling");
+			Assert.AreEqual(new DateTime(2026, 1, 1), packet.LastUpdated, "it is not a new release");
+
+			// a really different file still is
+			Parse(parser, "#44   0x [1.0M] Another.Show.S01E01.720p.mkv");
+			Assert.IsFalse(packet.Enabled);
+		}
 	}
 }

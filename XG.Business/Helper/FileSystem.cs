@@ -53,6 +53,28 @@ namespace XG.Business.Helper
 			return false;
 		}
 
+		/// <summary>
+		/// Returns aPath, or "name (n).ext" next to it if aPath is already taken, so a finished download never replaces an existing file.
+		/// </summary>
+		public static string FreeFileName(string aPath)
+		{
+			if (!File.Exists(aPath) && !Directory.Exists(aPath))
+			{
+				return aPath;
+			}
+			string folder = Path.GetDirectoryName(aPath) ?? "";
+			string name = Path.GetFileNameWithoutExtension(aPath);
+			string extension = Path.GetExtension(aPath);
+			for (int i = 1; ; i++)
+			{
+				string path = Path.Combine(folder, name + " (" + i + ")" + extension);
+				if (!File.Exists(path) && !Directory.Exists(path))
+				{
+					return path;
+				}
+			}
+		}
+
 		public static bool DeleteFile(string aName)
 		{
 			if (File.Exists(aName))

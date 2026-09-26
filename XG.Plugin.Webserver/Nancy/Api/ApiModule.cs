@@ -88,7 +88,7 @@ namespace XG.Plugin.Webserver.Nancy.Api
 					if (obj != null)
 					{
 						obj.Enabled = true;
-						return CreateSuccessResponseAndUpdateApiKey(_.format);
+						return CreateSuccessResponseAndUpdateApiKey();
 					}
 					return CreateErrorResponseAndUpdateApiKey(HttpStatusCode.NotFound);
 				}
@@ -106,7 +106,7 @@ namespace XG.Plugin.Webserver.Nancy.Api
 					if (obj != null)
 					{
 						obj.Enabled = false;
-						return CreateSuccessResponseAndUpdateApiKey(_.format);
+						return CreateSuccessResponseAndUpdateApiKey();
 					}
 					return CreateErrorResponseAndUpdateApiKey(HttpStatusCode.NotFound);
 				}
@@ -129,7 +129,7 @@ namespace XG.Plugin.Webserver.Nancy.Api
 					if (obj != null)
 					{
 						obj.Parent.Remove(obj);
-						return CreateSuccessResponseAndUpdateApiKey(_.format);
+						return CreateSuccessResponseAndUpdateApiKey();
 					}
 					return CreateErrorResponseAndUpdateApiKey(HttpStatusCode.NotFound);
 				}

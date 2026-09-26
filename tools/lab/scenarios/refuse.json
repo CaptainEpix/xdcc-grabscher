@@ -1,0 +1,14 @@
+{
+  "port": 16667,
+  "channel": "#lab",
+  "announce_every": 20,
+  "bots": [
+    { "nick": "LAB-REFUSE", "mode": "refuse", "ports": [41001], "pending_timeout": 60,
+      "packs": [ { "id": 1, "name": "Refuse.Show.S01E01.720p.mkv", "size": 3145728 },
+                 { "id": 2, "name": "Refuse.Show.S01E02.720p.mkv", "size": 3145728 } ] },
+    { "nick": "LAB-STALE", "mode": "flaky", "ports": [43001, 43002], "open_ports": [43002],
+      "port_sequence": [43001, 43002], "ignore_cancel": true, "pending_timeout": 70,
+      "packs": [ { "id": 1, "name": "Stale.Movie.2014.1080p.mkv", "size": 3145728 },
+                 { "id": 2, "name": "Stale.Movie.2015.1080p.mkv", "size": 3145728 } ] }
+  ]
+}

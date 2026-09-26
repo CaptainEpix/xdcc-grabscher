@@ -186,6 +186,27 @@ namespace XG.Model.Domain
 			get { return (from pack in Packets where pack.File != null select pack.File.Speed).Sum(); }
 		}
 
+		DateTime _passiveDccTime = DateTime.MinValue.ToUniversalTime();
+
+		/// <summary>
+		/// When the bot last offered a passive (reverse) DCC transfer, which XG can not receive.
+		/// </summary>
+		public DateTime PassiveDccTime
+		{
+			get { return GetProperty(ref _passiveDccTime); }
+			set { SetProperty(ref _passiveDccTime, value, "PassiveDccTime"); }
+		}
+
+		/// <summary>
+		/// Whether the bot recently offered a passive DCC transfer; such bots are not offered to the *Arr applications.
+		/// </summary>
+		public bool OffersPassiveDccOnly
+		{
+			get { return PassiveDccTime > DateTime.Now.AddDays(-PassiveDccMemoryDays); }
+		}
+
+		public const int PassiveDccMemoryDays = 7;
+
 		[Transient]
 		bool _hasNetworkProblems;
 

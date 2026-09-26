@@ -143,6 +143,12 @@ namespace XG.Plugin.Irc
 							ParserOnUnRequestFromBot(tBot);
 						}
 					}
+					// e.g. a broken offer or a denied request: the bot's next packet does not have to
+					// wait for the long "no answer" timer of this request
+					if (tBot.State == Bot.States.Idle && tBot.OldestActivePacket() != null)
+					{
+						RescheduleBot(tBot, Settings.Default.CommandWaitTime);
+					}
 				}
 			}
 		}
@@ -182,10 +188,13 @@ namespace XG.Plugin.Irc
 			Parser.Parse(message);
 
 			// check if the bot sends a message and hold back xdcc list requests one more time
-			var entry = _xdccListQueue.FirstOrDefault(x => x.User == e.Value2);
-			if (entry != null)
+			lock (_xdccListQueue)
 			{
-				entry.IncreaseTime();
+				var entry = _xdccListQueue.FirstOrDefault(x => x.User == e.Value2);
+				if (entry != null)
+				{
+					entry.IncreaseTime();
+				}
 			}
 		}
 
@@ -273,24 +282,28 @@ namespace XG.Plugin.Irc
 					return;
 				}
 
-				var entry = _xdccListQueue.FirstOrDefault(x => x.User == aEventArgs.Value2);
-				if (entry == null)
+				// the parser, the IRC events and the trigger job all use the queue
+				lock (_xdccListQueue)
 				{
-					_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") adding");
-					entry = new XdccListEntry(aEventArgs.Value2, aEventArgs.Value3);
-					_xdccListQueue.Add(entry);
-				}
-				else
-				{
-					entry.IncreaseTime();
-					if (entry.Commands.All(s => s != aEventArgs.Value3))
+					var entry = _xdccListQueue.FirstOrDefault(x => x.User == aEventArgs.Value2);
+					if (entry == null)
 					{
-						_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") enqueuing");
-						entry.Commands.Enqueue(aEventArgs.Value3);
+						_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") adding");
+						entry = new XdccListEntry(aEventArgs.Value2, aEventArgs.Value3);
+						_xdccListQueue.Add(entry);
 					}
 					else
 					{
-						_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") skipping");
+						entry.IncreaseTime();
+						if (entry.Commands.All(s => s != aEventArgs.Value3))
+						{
+							_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") enqueuing");
+							entry.Commands.Enqueue(aEventArgs.Value3);
+						}
+						else
+						{
+							_log.Info("XdccList(" + aEventArgs.Value2 + ", " + aEventArgs.Value3 + ") skipping");
+						}
 					}
 				}
 			}
@@ -340,7 +353,7 @@ if (!String.IsNullOrEmpty(commandForLog) &&
 						if (_latestPacketRequests.Contains(name))
 						{
 							double time = _latestPacketRequests.GetMissingSeconds(name);
-							_log.Warn("RequestFromBot(" + aBot + ") packet name " + tPacket.Name + " is blocked for " + time + "ms");
+							_log.Warn("RequestFromBot(" + aBot + ") packet name " + tPacket.Name + " is blocked for " + time + "s");
 							AddBotToQueue(aBot, (int) time + 1);
 							return;
 						}
@@ -376,7 +389,10 @@ if (!String.IsNullOrEmpty(commandForLog) &&
 		{
 			if (aChannel.AskForVersion && _client.IsUserMaybeeXdccBot(aChannel.Name, aUser))
 			{
-				_userToAskForVersion.Enqueue(aUser);
+				lock (_userToAskForVersion)
+				{
+					_userToAskForVersion.Enqueue(aUser);
+				}
 			}
 		}
 
@@ -519,36 +535,75 @@ if (!String.IsNullOrEmpty(commandForLog) &&
 				return;
 			}
 
-			var entriesReady = (from e in _xdccListQueue where (e.WaitUntil - DateTime.Now).TotalSeconds < 0 && e.Commands.Count > 0 select e).ToArray();
-			foreach (var entry in entriesReady)
+			// the parser and the IRC events add to the queue meanwhile
+			lock (_xdccListQueue)
 			{
-				string command = entry.Commands.Dequeue();
-				_log.Info("TriggerXdccListRun(" + entry.User + ", " + command + ")");
-				_client.SendMessage(entry.User, command);
-				_latestXdccListRequests.Add(entry.User + "@" + command, DateTime.Now.AddSeconds(Settings.Default.ChannelWaitTimeLong));
+				var entriesReady = (from e in _xdccListQueue where (e.WaitUntil - DateTime.Now).TotalSeconds < 0 && e.Commands.Count > 0 select e).ToArray();
+				foreach (var entry in entriesReady)
+				{
+					string command = entry.Commands.Dequeue();
+					_log.Info("TriggerXdccListRun(" + entry.User + ", " + command + ")");
+					_client.SendMessage(entry.User, command);
+					_latestXdccListRequests.Add(entry.User + "@" + command, DateTime.Now.AddSeconds(Settings.Default.ChannelWaitTimeLong));
 
-				if (entry.Commands.Count == 0)
-				{
-					_log.Info("TriggerXdccListRun(" + entry.User + ") removing entry");
-					_xdccListQueue.Remove(entry);
-				}
-				else
-				{
-					entry.IncreaseTime();
+					if (entry.Commands.Count == 0)
+					{
+						_log.Info("TriggerXdccListRun(" + entry.User + ") removing entry");
+						_xdccListQueue.Remove(entry);
+					}
+					else
+					{
+						entry.IncreaseTime();
+					}
 				}
 			}
 		}
 
 		void TriggerVersionRun()
 		{
-			if (_lastAskForVersionTime.AddSeconds(Settings.Default.CommandWaitTime) < DateTime.Now && _userToAskForVersion.Count > 0)
+			if (_lastAskForVersionTime.AddSeconds(Settings.Default.CommandWaitTime) < DateTime.Now)
 			{
+				string user;
+				lock (_userToAskForVersion)
+				{
+					if (_userToAskForVersion.Count == 0)
+					{
+						return;
+					}
+					user = _userToAskForVersion.Dequeue();
+				}
 				_lastAskForVersionTime = DateTime.Now;
-				string user = _userToAskForVersion.Dequeue();
 
 				_log.Info("AskForVersion(" + user + ")");
 				_client.Version(user);
 			}
+		}
+
+		/// <summary>
+		/// Whether XG asked this user for its pack list during the last hour. Lists nobody asked for
+		/// are not downloaded, XG would connect to any address and port a stranger names.
+		/// </summary>
+		public bool AskedForXdccList(string aUser)
+		{
+			_latestXdccListRequests.RemoveExpiredItems();
+			return _latestXdccListRequests.Any(key => key.StartsWith(aUser + "@", StringComparison.OrdinalIgnoreCase));
+		}
+
+		/// <summary>
+		/// Asks the bot to drop its pending DCC offer, so the next request gets a new one.
+		/// </summary>
+		public void CancelOffer(Bot aBot)
+		{
+			_log.Info("CancelOffer(" + aBot + ")");
+			_client.XdccCancel(aBot);
+		}
+
+		/// <summary>
+		/// Requests from the bot again after the given time, replacing an already scheduled request.
+		/// </summary>
+		public void RescheduleBot(Bot aBot, int aSeconds)
+		{
+			_botQueue.Add(aBot, DateTime.Now.AddSeconds(aSeconds));
 		}
 
 		public void AddBotToQueue(Bot aBot, int aInt)

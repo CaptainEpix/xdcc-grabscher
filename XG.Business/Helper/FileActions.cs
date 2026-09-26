@@ -75,9 +75,76 @@ namespace XG.Business.Helper
 			OnNotificationAdded(null, eventArgs);
 		}
 
+		/// <summary>
+		/// A completely downloaded file is about to be moved into the ready folder.
+		/// Fired before the matching packets are disabled; carries the file and the matching packets.
+		/// </summary>
+		public static event EventHandler<EventArgs<XG.Model.Domain.File, Packet[]>> OnFileFinishing = delegate {};
+
+		/// <summary>
+		/// A file was finished. Carries the file, the matching packets, the ready path
+		/// and whether the file could be moved there.
+		/// </summary>
+		public static event EventHandler<EventArgs<XG.Model.Domain.File, Packet[], string, bool>> OnFileFinished = delegate {};
+
+		static void FireFileFinishing(XG.Model.Domain.File aFile, Packet[] aPackets)
+		{
+			try
+			{
+				OnFileFinishing(null, new EventArgs<XG.Model.Domain.File, Packet[]>(aFile, aPackets));
+			}
+			catch (Exception ex)
+			{
+				Log.Error("FireFileFinishing(" + aFile + ")", ex);
+			}
+		}
+
+		static void FireFileFinished(XG.Model.Domain.File aFile, Packet[] aPackets, string aReadyPath, bool aSuccess)
+		{
+			try
+			{
+				OnFileFinished(null, new EventArgs<XG.Model.Domain.File, Packet[], string, bool>(aFile, aPackets, aReadyPath, aSuccess));
+			}
+			catch (Exception ex)
+			{
+				Log.Error("FireFileFinished(" + aFile + ")", ex);
+			}
+		}
+
 		#endregion
 
 		#region FILE
+
+		/// <summary>
+		/// Optional: the folder a finished file goes to instead of the ready folder, null or empty for the ready folder.
+		/// </summary>
+		public static Func<XG.Model.Domain.File, Packet[], string> ReadyFolderResolver { get; set; }
+
+		static string ReadyFolder(XG.Model.Domain.File aFile, Packet[] aPackets)
+		{
+			var resolver = ReadyFolderResolver;
+			if (resolver != null)
+			{
+				try
+				{
+					string folder = resolver(aFile, aPackets);
+					if (!string.IsNullOrEmpty(folder))
+					{
+						if (!folder.EndsWith("" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+						{
+							folder += Path.DirectorySeparatorChar;
+						}
+						Directory.CreateDirectory(folder);
+						return folder;
+					}
+				}
+				catch (Exception ex)
+				{
+					Log.Error("ReadyFolder(" + aFile + ") using the ready folder", ex);
+				}
+			}
+			return Settings.Default.ReadyPath;
+		}
 
 		public static XG.Model.Domain.File TryGetFile(string aName, Int64 aSize)
 		{
@@ -149,6 +216,7 @@ namespace XG.Business.Helper
 
 				string fileName = XG.Model.Domain.Helper.ShrinkFileName(aFile.Name, 0);
 				List<Packet> matchedPackets = (from server in Servers.All from channel in server.Channels from bot in channel.Bots from packet in bot.Packets where packet.Enabled && (XG.Model.Domain.Helper.ShrinkFileName(packet.RealName, 0).EndsWith(fileName) || XG.Model.Domain.Helper.ShrinkFileName(packet.Name, 0).EndsWith(fileName)) select packet).ToList();
+				FireFileFinishing(aFile, matchedPackets.ToArray());
 				foreach (Packet tPack in matchedPackets)
 				{
 					Log.Info("FinishFile(" + aFile + ") disabling " + tPack + " from " + tPack.Parent);
@@ -159,27 +227,48 @@ namespace XG.Business.Helper
 				#endregion
 
 				string tmpPath = Settings.Default.TempPath + aFile.TmpName;
-				string readyPath = Settings.Default.ReadyPath + aFile.Name;
+				string readyFolder = ReadyFolder(aFile, matchedPackets.ToArray());
+				string readyPath = FileSystem.FreeFileName(readyFolder + aFile.Name);
+				if (readyPath != readyFolder + aFile.Name)
+				{
+					Log.Warn("FinishFile(" + aFile + ") " + aFile.Name + " already exists, saving as " + readyPath);
+				}
 
 				try
 				{
 					if (FileSystem.MoveFile(tmpPath, readyPath))
 					{
 						Files.Remove(aFile);
+						FireFileFinished(aFile, matchedPackets.ToArray(), readyPath, true);
 
 						// great, all went right, so lets check what we can do with the file
-						var thread = new Thread(() => HandleFile(readyPath));
+						var thread = new Thread(() =>
+						{
+							// an unhandled exception in any thread ends the whole process under Mono
+							try
+							{
+								HandleFile(readyPath);
+							}
+							catch (Exception ex)
+							{
+								Log.Fatal("HandleFile(" + readyPath + ")", ex);
+							}
+						});
 						thread.Name = "HandleFile|" + aFile.Name;
 						thread.Start();
 					}
 					else
 					{
 						Log.Fatal("FinishFile(" + aFile + ") cant move file");
+						FireFileFinished(aFile, matchedPackets.ToArray(), readyPath, false);
+
+						FireNotificationAdded(Notification.Types.FileFinishFailed, aFile);
 					}
 				}
 				catch (Exception ex)
 				{
 					Log.Fatal("FinishFile(" + aFile + ") cant finish file", ex);
+					FireFileFinished(aFile, matchedPackets.ToArray(), readyPath, false);
 
 					FireNotificationAdded(Notification.Types.FileFinishFailed, aFile);
 				}
