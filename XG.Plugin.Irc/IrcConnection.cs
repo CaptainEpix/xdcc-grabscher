@@ -574,6 +574,16 @@ if (!String.IsNullOrEmpty(commandForLog) &&
 		}
 
 		/// <summary>
+		/// Whether XG asked this user for its pack list during the last hour. Lists nobody asked for
+		/// are not downloaded, XG would connect to any address and port a stranger names.
+		/// </summary>
+		public bool AskedForXdccList(string aUser)
+		{
+			_latestXdccListRequests.RemoveExpiredItems();
+			return _latestXdccListRequests.Any(key => key.StartsWith(aUser + "@", StringComparison.OrdinalIgnoreCase));
+		}
+
+		/// <summary>
 		/// Asks the bot to drop its pending DCC offer, so the next request gets a new one.
 		/// </summary>
 		public void CancelOffer(Bot aBot)

@@ -361,6 +361,13 @@ namespace XG.Plugin.Irc
 
 		void DownloadXdccList(object aSender, EventArgs<Server, string, Int64, IPAddress, int> aEventArgs)
 		{
+			var connection = _connections.SingleOrDefault(c => c.Server == aEventArgs.Value1);
+			if (connection == null || !connection.AskedForXdccList(aEventArgs.Value2))
+			{
+				_log.Warn("DownloadXdccList(" + aEventArgs.Value2 + ") ignoring a pack list XG did not ask for, from " + aEventArgs.Value4 + ":" + aEventArgs.Value5);
+				return;
+			}
+
 			var download = _xdccListDownloads.SingleOrDefault(c => c.Bot == aEventArgs.Value2);
 			if (download == null)
 			{
