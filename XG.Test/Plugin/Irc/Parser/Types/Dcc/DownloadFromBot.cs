@@ -265,6 +265,46 @@ namespace XG.Test.Plugin.Irc.Parser.Types.Dcc
 		}
 
 		[Test]
+		public void BrokenOffersAreRejectedTest()
+		{
+			var broken = new[]
+			{
+				"\u0001DCC SEND\u0001",
+				"\u0001DCC SEND Testfile.with.a.long.name.mkv notanip 45000 975304559\u0001",
+				"\u0001DCC SEND Testfile.with.a.long.name.mkv 1203194610 port 975304559\u0001",
+				"\u0001DCC SEND Testfile.with.a.long.name.mkv 1203194610 99999999 975304559\u0001",
+				"\u0001DCC SEND Testfile.with.a.long.name.mkv 1203194610 45000 999999999999999999999999\u0001",
+				"\u0001DCC SEND Testfile.with.a.long.name.mkv 1203194610 45000\u0001",
+				"\u0001DCC ACCEPT\u0001",
+				"\u0001DCC ACCEPT Testfile.with.a.long.name.mkv 45000 notanumber\u0001",
+				"\u0001DCC SEND Testfile.with.a.long.name.mkv"
+			};
+			foreach (string offer in broken)
+			{
+				Packet.Enabled = true;
+				var parser = new XG.Plugin.Irc.Parser.Types.Dcc.DownloadFromBot();
+				EventArgs<Packet, Int64, IPAddress, int> raisedEvent = null;
+				Notification notification = null;
+				parser.OnAddDownload += (sender, e) => raisedEvent = e;
+				parser.OnNotificationAdded += (sender, e) => notification = e.Value1;
+
+				Assert.DoesNotThrow(() => Parse(parser, offer), offer);
+				Assert.IsNull(raisedEvent, offer);
+				Assert.IsFalse(Packet.Enabled, "a broken offer ends the request instead of asking forever: " + offer);
+				Assert.AreEqual(Notification.Types.BotSubmittedWrongData, notification.Type, offer);
+			}
+		}
+
+		[Test]
+		public void BrokenOffersDoNotBreakTheListParserTest()
+		{
+			var parser = new XG.Plugin.Irc.Parser.Types.Dcc.XdccListSend();
+			Assert.DoesNotThrow(() => Parse(parser, "\u0001DCC SEND\u0001"));
+			Assert.DoesNotThrow(() => Parse(parser, "\u0001DCC SEND list.txt 1203194610\u0001"));
+			Assert.DoesNotThrow(() => Parse(parser, "\u0001DCC "));
+		}
+
+		[Test]
 		public void UnknownOfferNameUsesOldestPacketTest()
 		{
 			// some bots send a different file name than they list; keep the old behaviour then

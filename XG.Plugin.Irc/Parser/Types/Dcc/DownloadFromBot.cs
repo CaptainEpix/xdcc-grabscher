@@ -43,7 +43,8 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 			{
 				return false;
 			}
-			string text = aMessage.Text.Substring(5, aMessage.Text.Length - 6);
+			// bots send all kinds of broken offers, never trust the number of fields
+			string text = aMessage.Text.Substring(5).TrimEnd('\u0001');
 
 			Bot tBot = aMessage.Channel.Bot(aMessage.Nick);
 			if (tBot == null)
@@ -111,20 +112,18 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 				{
 					tBot.IP = IPAddress.Parse(tDataList[2]);
 				}
-				catch (Exception ex)
+				catch (Exception)
 				{
-					Log.Fatal("Parse() " + tBot + " - can not parse bot ip from string: " + aMessage, ex);
-					return false;
+					return RejectOffer(tBot, tPacket, "no valid ip", aMessage);
 				}
 
 				try
 				{
 					tPort = int.Parse(tDataList[3]);
 				}
-				catch (Exception ex)
+				catch (Exception)
 				{
-					Log.Fatal("Parse() " + tBot + " - can not parse bot port from string: " + aMessage, ex);
-					return false;
+					return RejectOffer(tBot, tPacket, "no valid port", aMessage);
 				}
 
 				if (tPort == 0)
@@ -141,7 +140,7 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 				}
 
 				// we cant connect to port <= 0
-				if (tPort < 0 || (tPort == 0 && !passive))
+				if (tPort < 0 || tPort > 65535 || (tPort == 0 && !passive))
 				{
 					Log.Error("Parse() " + tBot + " submitted wrong port: " + tPort + (tPort == 0 ? " (passive DCC is not configured, see XG_PASSIVE_DCC_PORTS)" : "") + ", disabling packet");
 					tPacket.Enabled = false;
@@ -162,10 +161,9 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 				{
 					tPacket.RealSize = Int64.Parse(tDataList[4]);
 				}
-				catch (Exception ex)
+				catch (Exception)
 				{
-					Log.Fatal("Parse() " + tBot + " - can not parse packet size from string: " + aMessage, ex);
-					return false;
+					return RejectOffer(tBot, tPacket, "no valid size", aMessage);
 				}
 
 				if (tPacket.RealSize <= 0)
@@ -217,20 +215,18 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 				{
 					tPort = int.Parse(tDataList[2]);
 				}
-				catch (Exception ex)
+				catch (Exception)
 				{
-					Log.Fatal("Parse() " + tBot + " - can not parse bot port from string: " + aMessage, ex);
-					return false;
+					return RejectOffer(tBot, tPacket, "no valid port in the resume", aMessage);
 				}
 
 				try
 				{
 					startSize = Int64.Parse(tDataList[3]);
 				}
-				catch (Exception ex)
+				catch (Exception)
 				{
-					Log.Fatal("Parse() " + tBot + " - can not parse packet startSize from string: " + aMessage, ex);
-					return false;
+					return RejectOffer(tBot, tPacket, "no valid position in the resume", aMessage);
 				}
 
 				if (tPort == 0)
@@ -293,6 +289,18 @@ namespace XG.Plugin.Irc.Parser.Types.Dcc
 			}
 			FireSendMessage(this, new EventArgs<Server, SendType, string, string>(aMessage.Channel.Parent, SendType.CtcpRequest, aBot.Name,
 				"DCC SEND " + DccName(aName) + " " + PassiveDcc.ToDccAddress(address) + " " + reservation.PublicPort + " " + aPacket.RealSize + " " + aToken));
+		}
+
+		/// <summary>
+		/// A bot that answers with an offer XG can not use would otherwise be asked again and again forever.
+		/// </summary>
+		bool RejectOffer(Bot aBot, Packet aPacket, string aReason, Message aMessage)
+		{
+			Log.Error("Parse() " + aBot + " submitted wrong data (" + aReason + "): " + aMessage.Text + ", disabling packet");
+			aPacket.Enabled = false;
+			aPacket.Commit();
+			FireNotificationAdded(Notification.Types.BotSubmittedWrongData, aPacket);
+			return true;
 		}
 
 		static string DccName(string aName)
