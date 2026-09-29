@@ -32,6 +32,16 @@ namespace XG.Plugin.Irc.Parser
 	{
 		public static string Magicstring = @"((\*|:){2,3}|->|<-|)";
 
+		static Helper()
+		{
+			// every IRC line is matched against the patterns of all parsers, far more than the 15 regexes
+			// .NET caches by default: each line rebuilt most of them, a lot of CPU and garbage per line
+			if (Regex.CacheSize < 128)
+			{
+				Regex.CacheSize = 128;
+			}
+		}
+
 		public static string RemoveSpecialIrcChars(string aData)
 		{
 			string tData = Regex.Replace(aData, @"[\x02\x1F\x0F\x16]|\x03(\d\d?(,\d\d?)?)?", String.Empty);

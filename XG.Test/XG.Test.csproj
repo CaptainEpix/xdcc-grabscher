@@ -119,6 +119,7 @@
   <ItemGroup>
     <Compile Include="DB\Dao.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Model\Domain\Bot.cs" />
     <Compile Include="Model\Domain\Server.cs" />
     <Compile Include="Model\Domain\Servers.cs" />
     <Compile Include="Model\Domain\Helper.cs" />
