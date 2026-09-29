@@ -229,7 +229,8 @@ namespace XG.Model.Domain
 		{
 			try
 			{
-				return Packets.FirstOrDefault(pack => pack.Id == aId);
+				// every announcement looks its packet up, so do not copy all packets for that
+				return FindChild(child => ((Packet) child).Id == aId) as Packet;
 			}
 			catch (Exception)
 			{

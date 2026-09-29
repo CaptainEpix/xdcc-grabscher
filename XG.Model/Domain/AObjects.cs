@@ -170,12 +170,33 @@ namespace XG.Model.Domain
 		{
 			try
 			{
-				return Children.FirstOrDefault(obj => obj.Name.Trim().ToLower() == aName.Trim().ToLower());
+				string name = aName.Trim().ToLower();
+				return FindChild(obj => obj.Name.Trim().ToLower() == name);
 			}
 			catch (Exception)
 			{
 				return null;
 			}
+		}
+
+		/// <summary>
+		/// Finds a child without copying all children first, as Children does on every call:
+		/// for a bot with tens of thousands of packets every copy costs more than a megabyte.
+		/// </summary>
+		protected AObject FindChild(Func<AObject, bool> aPredicate)
+		{
+			Activate(ActivationPurpose.Read);
+			lock (_children)
+			{
+				foreach (var child in _children)
+				{
+					if (child != null && aPredicate(child))
+					{
+						return child;
+					}
+				}
+			}
+			return null;
 		}
 
 		protected abstract bool DuplicateChildExists(AObject aObject);
