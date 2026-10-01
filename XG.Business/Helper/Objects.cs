@@ -60,5 +60,87 @@ namespace XG.Business.Helper
 				obj.Parent.RemovePacket(obj);
 			}
 		}
+
+		/// <summary>
+		/// A bot sitting in several of our channels, also on different networks, announces each packet in all of them.
+		/// Returns the copy an online bot of that name already offers somewhere else, or null.
+		/// </summary>
+		public static Packet PacketOfSameBotElsewhere(Channel aChannel, string aBotName, int aId, string aName, Int64 aSize)
+		{
+			var server = aChannel.Parent as Server;
+			var servers = server != null ? server.Parent as Servers : null;
+			if (servers == null)
+			{
+				return null;
+			}
+
+			foreach (var otherServer in servers.All)
+			{
+				foreach (var channel in otherServer.Channels)
+				{
+					if (channel == aChannel)
+					{
+						continue;
+					}
+					var bot = channel.Bot(aBotName);
+					if (bot == null || !bot.Connected)
+					{
+						continue;
+					}
+					var packet = bot.Packet(aId);
+					if (packet != null && packet.Name == aName && packet.Size == aSize)
+					{
+						return packet;
+					}
+				}
+			}
+			return null;
+		}
+
+		/// <summary>
+		/// Removes packets a bot of the same name offers in another of our channels too, keeping one copy.
+		/// Copies of online bots are kept first, and a packet which is queued or downloading is never removed.
+		/// </summary>
+		public static int RemoveDuplicatePackets(Servers aServers)
+		{
+			Bot[] bots = (from server in aServers.All from channel in server.Channels from bot in channel.Bots select bot).ToArray();
+
+			int removed = 0;
+			foreach (var sameBots in bots.GroupBy(bot => bot.Name.Trim().ToLower()).Where(group => group.Count() > 1))
+			{
+				Bot[] ordered = sameBots.OrderByDescending(bot => bot.Connected).ToArray();
+
+				var kept = new HashSet<string>();
+				foreach (var bot in ordered)
+				{
+					foreach (var packet in bot.Packets.Where(IsBusy))
+					{
+						kept.Add(DuplicateKey(packet));
+					}
+				}
+				foreach (var bot in ordered)
+				{
+					foreach (var packet in bot.Packets.Where(packet => !IsBusy(packet)))
+					{
+						if (!kept.Add(DuplicateKey(packet)))
+						{
+							bot.RemovePacket(packet);
+							removed++;
+						}
+					}
+				}
+			}
+			return removed;
+		}
+
+		static bool IsBusy(Packet aPacket)
+		{
+			return aPacket.Enabled || aPacket.Connected || aPacket.File != null;
+		}
+
+		static string DuplicateKey(Packet aPacket)
+		{
+			return aPacket.Id + "|" + aPacket.Size + "|" + aPacket.Name;
+		}
 	}
 }

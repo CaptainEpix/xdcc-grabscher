@@ -60,6 +60,73 @@ namespace XG.Test.Business.Helper
 			Assert.AreEqual(newCount * newCount * newCount * newCount, (from server in servers.All from channel in server.Channels from bot in channel.Bots from packet in bot.Packets select packet).Count());
 		}
 
+		[Test]
+		public void RemoveDuplicatePacketsTest()
+		{
+			var servers = new Servers();
+			var rizon = new Server { Name = "irc.rizon.net" };
+			var coreirc = new Server { Name = "irc.coreirc.net" };
+			servers.Add(rizon);
+			servers.Add(coreirc);
+			var channelA = new Channel { Name = "#a" };
+			var channelB = new Channel { Name = "#b" };
+			rizon.AddChannel(channelA);
+			coreirc.AddChannel(channelB);
+
+			// the same bot sits in both channels, online only in the second one
+			var offlineBot = new Bot { Name = "[EWG]DB", Connected = false };
+			var onlineBot = new Bot { Name = "[ewg]db", Connected = true };
+			channelA.AddBot(offlineBot);
+			channelB.AddBot(onlineBot);
+			var otherBot = new Bot { Name = "OtherBot", Connected = true };
+			channelA.AddBot(otherBot);
+
+			for (int id = 1; id <= 3; id++)
+			{
+				offlineBot.AddPacket(new Packet { Id = id, Name = "File" + id + ".mkv", Size = id * 100 });
+				onlineBot.AddPacket(new Packet { Id = id, Name = "File" + id + ".mkv", Size = id * 100 });
+				otherBot.AddPacket(new Packet { Id = id, Name = "File" + id + ".mkv", Size = id * 100 });
+			}
+			// a packet only one copy has, and one whose number now offers another file
+			offlineBot.AddPacket(new Packet { Id = 4, Name = "Only.Here.mkv", Size = 400 });
+			onlineBot.AddPacket(new Packet { Id = 5, Name = "New.mkv", Size = 500 });
+			offlineBot.AddPacket(new Packet { Id = 5, Name = "Old.mkv", Size = 500 });
+			// a packet XG downloads is never removed, even from the offline copy
+			offlineBot.Packet(2).Enabled = true;
+
+			Assert.AreEqual(3, XG.Business.Helper.Objects.RemoveDuplicatePackets(servers));
+
+			CollectionAssert.AreEquivalent(new[] { 2, 4, 5 }, offlineBot.Packets.Select(p => p.Id));
+			CollectionAssert.AreEquivalent(new[] { 1, 3, 5 }, onlineBot.Packets.Select(p => p.Id));
+			Assert.AreEqual(3, otherBot.Packets.Count(), "another bot offering the same files is a source of its own");
+
+			Assert.AreEqual(0, XG.Business.Helper.Objects.RemoveDuplicatePackets(servers));
+		}
+
+		[Test]
+		public void PacketOfSameBotElsewhereTest()
+		{
+			var servers = new Servers();
+			var server = new Server { Name = "irc.rizon.net" };
+			servers.Add(server);
+			var channelA = new Channel { Name = "#a" };
+			var channelB = new Channel { Name = "#b" };
+			server.AddChannel(channelA);
+			server.AddChannel(channelB);
+			var bot = new Bot { Name = "[EWG]DB", Connected = true };
+			channelA.AddBot(bot);
+			bot.AddPacket(new Packet { Id = 7, Name = "Some.Show.S01E01.mkv", Size = 1000 });
+
+			Assert.IsNotNull(XG.Business.Helper.Objects.PacketOfSameBotElsewhere(channelB, "[ewg]db", 7, "Some.Show.S01E01.mkv", 1000));
+			Assert.IsNull(XG.Business.Helper.Objects.PacketOfSameBotElsewhere(channelA, "[EWG]DB", 7, "Some.Show.S01E01.mkv", 1000), "the own channel does not count");
+			Assert.IsNull(XG.Business.Helper.Objects.PacketOfSameBotElsewhere(channelB, "[EWG]DB", 7, "Other.File.mkv", 1000));
+			Assert.IsNull(XG.Business.Helper.Objects.PacketOfSameBotElsewhere(channelB, "[EWG]DB", 7, "Some.Show.S01E01.mkv", 2000));
+			Assert.IsNull(XG.Business.Helper.Objects.PacketOfSameBotElsewhere(channelB, "OtherBot", 7, "Some.Show.S01E01.mkv", 1000));
+
+			bot.Connected = false;
+			Assert.IsNull(XG.Business.Helper.Objects.PacketOfSameBotElsewhere(channelB, "[EWG]DB", 7, "Some.Show.S01E01.mkv", 1000), "a copy of an offline bot can not be downloaded");
+		}
+
 		Server createServer(String aName)
 		{
 			var server = new Server { Name = aName };
