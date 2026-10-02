@@ -38,7 +38,7 @@ define(['./module'], function (ng) {
 
 	ng.constant('LANGUAGE', lang);
 	ng.constant('SALT', '');
-	ng.constant('VERSION', '3.3.3.1');
+	ng.constant('VERSION', '3.3.3.2');
 	ng.constant('REMOTE_SETTINGS', {});
 	ng.constant('ONLINE', false);
 });
