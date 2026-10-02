@@ -63,6 +63,12 @@ namespace XG.Business.Job
 			{
 				Log.Info("Execute() removed " + a + " offline bot(s)");
 			}
+
+			int duplicates = Helper.Objects.RemoveDuplicatePackets(Servers);
+			if (duplicates > 0)
+			{
+				Log.Info("Execute() removed " + duplicates + " packets a bot offers in several channels");
+			}
 		}
 	}
 }

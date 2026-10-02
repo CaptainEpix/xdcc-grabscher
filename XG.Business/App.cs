@@ -90,6 +90,11 @@ namespace XG.Business
 			_rrdDb = new Rrd().GetDb();
 
 			Objects.CheckAndRemoveDuplicates(Servers);
+			int duplicates = Objects.RemoveDuplicatePackets(Servers);
+			if (duplicates > 0)
+			{
+				Log.Info("App() removed " + duplicates + " packets a bot offers in several channels");
+			}
 			ClearOldDownloads();
 			TryToRecoverOpenFiles();
 		}

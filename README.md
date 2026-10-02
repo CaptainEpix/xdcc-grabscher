@@ -1,12 +1,17 @@
-# XG 3.3.3.1 — Mono/Docker Compatibility Fork
+# XG 3.3.3.2 — Mono/Docker Compatibility Fork
 
 This fork revives **XG (XDCC Grabscher) 3.3.0.0** for modern Mono and Docker environments.
 
 XG was originally created by **Lars Formella**. This fork preserves the original project, licensing, and attribution while applying compatibility and maintenance fixes needed to run XG on current systems.
 
-This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3.3.1**.
+This compatibility release is based on XG 3.3.0.0 and reports itself as **XG 3.3.3.2**.
 
 ## What's changed
+
+### 3.3.3.2
+
+- A bot sitting in several of your channels, also on different networks, has its packets stored once instead of once per channel; duplicates already stored are removed at startup and every 20 minutes, keeping the copy of an online bot and never touching a packet that is queued or downloading
+- The database is saved at most every 2 seconds instead of after every change, which made each new packet of a bot with a large pack list (100,000+) cost a quarter of a second or more
 
 ### 3.3.3.1
 
@@ -60,10 +65,10 @@ Every release is published to the GitHub Container Registry:
 
 ```text
 ghcr.io/captainepix/xdcc-grabscher:latest
-ghcr.io/captainepix/xdcc-grabscher:3.3.3.1-mono2026
+ghcr.io/captainepix/xdcc-grabscher:3.3.3.2-mono2026
 ```
 
-`latest` follows the newest release; the versioned tag stays fixed. Use either one instead of `xdcc-grabscher:3.3.3.1` in the examples below if you do not want to build the image yourself.
+`latest` follows the newest release; the versioned tag stays fixed. Use either one instead of `xdcc-grabscher:3.3.3.2` in the examples below if you do not want to build the image yourself.
 
 On **unRAID**, install *XDCC-Grabscher* from Community Applications. The template already contains the ports, paths and the optional settings described below.
 
@@ -72,7 +77,7 @@ On **unRAID**, install *XDCC-Grabscher* from Community Applications. The templat
 From the repository root:
 
 ```bash
-docker build -t xdcc-grabscher:3.3.3.1 .
+docker build -t xdcc-grabscher:3.3.3.2 .
 ```
 
 ### Run
@@ -84,7 +89,7 @@ docker run -d \
   -p 5556:5556 \
   -v /path/to/config:/config \
   -v /path/to/downloads:/config/.config/XG/dl \
-  xdcc-grabscher:3.3.3.1
+  xdcc-grabscher:3.3.3.2
 ```
 
 Then open:
@@ -157,7 +162,7 @@ docker run -d \
   -e XG_PASSIVE_DCC_PORTS=50000-50004 \
   -v /path/to/config:/config \
   -v /path/to/downloads:/config/.config/XG/dl \
-  xdcc-grabscher:3.3.3.1
+  xdcc-grabscher:3.3.3.2
 ```
 
 **Behind a VPN** (e.g. XG sharing the network of a gluetun container): the ports have to be forwarded by the VPN provider, and not every provider offers that. Because XG looks up its address through its own connection, it finds the VPN's address by itself. If the provider forwards a fixed port, set it in `XG_PASSIVE_DCC_PORTS`; if the forwarded port changes on every connection, share gluetun's port file with XG and point `XG_PASSIVE_DCC_PORTS_FILE` at it.
@@ -354,13 +359,13 @@ The legacy SignalR/Nowin stack used by XG does not provide working WebSocket sup
 Application version:
 
 ```text
-3.3.3.1
+3.3.3.2
 ```
 
 Compatibility release/tag:
 
 ```text
-v3.3.3.1-mono2026
+v3.3.3.2-mono2026
 ```
 
 ## Original project

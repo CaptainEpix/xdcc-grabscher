@@ -24,6 +24,8 @@
 //  
 
 using System;
+using System.Reflection;
+using System.Threading;
 using Db4objects.Db4o;
 using Db4objects.Db4o.Config;
 using Db4objects.Db4o.Config.Encoding;
@@ -33,6 +35,7 @@ using XG.Config.Properties;
 using XG.Extensions;
 using XG.Model.Domain;
 using XG.Plugin;
+using log4net;
 
 namespace XG.DB
 {
@@ -40,9 +43,17 @@ namespace XG.DB
 	{
 		#region VARIABLES
 
+		static readonly ILog Log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+
 		IObjectContainer _db;
 
 		readonly object _lock = new object();
+
+		// every change used to commit right away; a commit stores every modified list completely,
+		// so a bot with 100,000 packets cost a whole list write for each packet it announced
+		const int CommitDelayMilliseconds = 2000;
+		Timer _commitTimer;
+		bool _commitPending;
 
 		#endregion
 
@@ -71,6 +82,7 @@ namespace XG.DB
 			}*/
 
 			_db = Db4oEmbedded.OpenFile(config, dbPath);
+			_commitTimer = new Timer(CommitPending, null, Timeout.Infinite, Timeout.Infinite);
 
 			if (loadFromSqlite)
 			{
@@ -94,8 +106,16 @@ namespace XG.DB
 			Searches = null;
 			ApiKeys = null;
 
-			_db.Commit();
-			_db.Close();
+			lock (_lock)
+			{
+				if (_commitTimer != null)
+				{
+					_commitTimer.Dispose();
+				}
+				_commitPending = false;
+				_db.Commit();
+				_db.Close();
+			}
 		}
 
 		#endregion
@@ -224,15 +244,41 @@ namespace XG.DB
 			TryCommit();
 		}
 
+		/// <summary>
+		/// Commits shortly after a change, so that a burst of changes is stored with one commit.
+		/// </summary>
 		void TryCommit()
 		{
-			lock(_lock)
+			lock (_lock)
 			{
-				try
+				if (!_commitPending)
 				{
+					_commitPending = true;
+					_commitTimer.Change(CommitDelayMilliseconds, Timeout.Infinite);
+				}
+			}
+		}
+
+		void CommitPending(object aState)
+		{
+			// an exception escaping a timer thread would end XG
+			try
+			{
+				lock (_lock)
+				{
+					if (!_commitPending)
+					{
+						return;
+					}
+					_commitPending = false;
 					_db.Commit();
 				}
-				catch (DatabaseClosedException) {}
+			}
+			catch (DatabaseClosedException) {}
+			catch (ObjectDisposedException) {}
+			catch (Exception ex)
+			{
+				Log.Error("CommitPending()", ex);
 			}
 		}
 

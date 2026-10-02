@@ -65,9 +65,18 @@ namespace XG.Plugin.Irc.Parser.Types.Info
 						return false;
 					}
 
+					string name = RemoveSpecialIrcCharsFromPacketName(match.Groups["pack_name"].ToString());
+					Int64? size = ParseSize(match);
+
 					Model.Domain.Packet tPack = tBot.Packet(tPacketId);
 					if (tPack == null)
 					{
+						// a bot in several of our channels announces each packet in all of them, one copy is enough
+						if (XG.Business.Helper.Objects.PacketOfSameBotElsewhere(aMessage.Channel, tUserName, tPacketId, name, size ?? 0) != null)
+						{
+							return true;
+						}
+
 						tPack = new Model.Domain.Packet();
 						newPacket = tPack;
 						tPack.Id = tPacketId;
@@ -75,7 +84,6 @@ namespace XG.Plugin.Irc.Parser.Types.Info
 					}
 					tPack.LastMentioned = DateTime.Now;
 
-					string name = RemoveSpecialIrcCharsFromPacketName(match.Groups["pack_name"].ToString());
 					// older versions dropped every non-ASCII letter and apostrophe; such a name is still the same file
 					bool sameFile = tPack.Name == LegacyName(name);
 					if (tPack.Name != name && tPack.Name != "" && !sameFile)
@@ -95,32 +103,9 @@ namespace XG.Plugin.Irc.Parser.Types.Info
 					}
 					tPack.Name = name;
 
-					double tPacketSizeFormated;
-					string stringSize = match.Groups["pack_size"].ToString().Replace("<", "").Replace(">", "");
-					if (Thread.CurrentThread.CurrentCulture.NumberFormat.NumberDecimalSeparator == ",")
+					if (size.HasValue)
 					{
-						stringSize = stringSize.Replace('.', ',');
-					}
-					double.TryParse(stringSize, out tPacketSizeFormated);
-
-					string tPacketAdd = match.Groups["pack_add"].ToString().ToLower();
-
-					switch (tPacketAdd)
-					{
-						case "k":
-						case "kb":
-							tPack.Size = (Int64) (tPacketSizeFormated * 1024);
-							break;
-
-						case "m":
-						case "mb":
-							tPack.Size = (Int64) (tPacketSizeFormated * 1024 * 1024);
-							break;
-
-						case "g":
-						case "gb":
-							tPack.Size = (Int64) (tPacketSizeFormated * 1024 * 1024 * 1024);
-							break;
+						tPack.Size = size.Value;
 					}
 
 					if (tPack.Commit() && newPacket == null)
@@ -164,6 +149,36 @@ namespace XG.Plugin.Irc.Parser.Types.Info
 		}
 
 		#region HELPER
+
+		/// <summary>
+		/// The announced size in bytes, or null for a unit XG does not know.
+		/// </summary>
+		static Int64? ParseSize(System.Text.RegularExpressions.Match aMatch)
+		{
+			double sizeFormated;
+			string stringSize = aMatch.Groups["pack_size"].ToString().Replace("<", "").Replace(">", "");
+			if (Thread.CurrentThread.CurrentCulture.NumberFormat.NumberDecimalSeparator == ",")
+			{
+				stringSize = stringSize.Replace('.', ',');
+			}
+			double.TryParse(stringSize, out sizeFormated);
+
+			switch (aMatch.Groups["pack_add"].ToString().ToLower())
+			{
+				case "k":
+				case "kb":
+					return (Int64) (sizeFormated * 1024);
+
+				case "m":
+				case "mb":
+					return (Int64) (sizeFormated * 1024 * 1024);
+
+				case "g":
+				case "gb":
+					return (Int64) (sizeFormated * 1024 * 1024 * 1024);
+			}
+			return null;
+		}
 
 		static string LegacyName(string aName)
 		{

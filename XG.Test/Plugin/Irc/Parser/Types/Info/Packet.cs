@@ -64,6 +64,37 @@ namespace XG.Test.Plugin.Irc.Parser.Types.Info
 		}
 
 		[Test]
+		public void SameBotInAnotherChannelTest()
+		{
+			var parser = new XG.Plugin.Irc.Parser.Types.Info.Packet();
+			var servers = new Servers();
+			servers.Add(Server);
+			var otherServer = new Server { Name = "irc.other.net" };
+			servers.Add(otherServer);
+			var otherChannel = new Channel { Name = "#other" };
+			otherServer.AddChannel(otherChannel);
+			var otherBot = new Bot { Name = Bot.Name, Connected = true };
+			otherChannel.AddBot(otherBot);
+
+			const string announcement = "#7   1x [1.2G] Some.Show.S01E01.1080p.mkv";
+			parser.Parse(new XG.Plugin.Irc.Parser.Message { Channel = otherChannel, Nick = Bot.Name, Text = announcement });
+			Assert.IsNotNull(otherBot.Packet(7));
+
+			// the same bot announcing the same packet here is not stored a second time
+			Parse(parser, announcement);
+			Assert.IsNull(Bot.Packet(7));
+
+			// a packet only this channel has is
+			Parse(parser, "#8   1x [1.2G] Some.Show.S01E02.1080p.mkv");
+			Assert.IsNotNull(Bot.Packet(8));
+
+			// and once the other copy can not be downloaded, this one is kept
+			otherBot.Connected = false;
+			Parse(parser, announcement);
+			Assert.IsNotNull(Bot.Packet(7));
+		}
+
+		[Test]
 		public void NonAsciiNamesTest()
 		{
 			var parser = new XG.Plugin.Irc.Parser.Types.Info.Packet();
